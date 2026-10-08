@@ -15,15 +15,15 @@ version = "0.1.0"
 
 readme = "README.mbt.md"
 
-repository = ""
+repository = "https://github.com/1726914517-spec/moonproxy"
 
 license = "Apache-2.0"
 
-keywords = [ ]
+keywords = ["http", "reverse-proxy", "load-balancer", "network", "server"]
 
 preferred_target = "wasm"
 
-description = ""
+description = "A native L7 reverse proxy / load balancer runtime: host/path routing, five balancing policies, forwarding header policy, passive health checks and failover."
 
 import {
   "moonbitlang/async@0.22.4",
