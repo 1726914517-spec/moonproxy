@@ -11,7 +11,7 @@
 
 name = "1726914517-spec/moonproxy"
 
-version = "0.1.0"
+version = "0.1.1"
 
 readme = "README.mbt.md"
 
