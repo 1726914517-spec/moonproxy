@@ -21,19 +21,15 @@ jobs:
 
       - name: Check (all targets)
         run: |
-          run_step() {
-            set +e
-            out=$("$@" 2>&1)
-            code=$?
-            echo "$out"
-            if [ $code -ne 0 ]; then
-              echo "$out" | grep -E "Error|error\[|error:|╭|╰" | head -25 | while IFS= read -r line; do
-                echo "::error::$line"
-              done
-              exit $code
-            fi
-          }
-          run_step moon check --target all --deny-warn
+          set +e
+          out=$(moon check --target all --deny-warn 2>&1)
+          code=$?
+          echo "$out"
+          if [ $code -ne 0 ]; then
+            enc=$(printf '%s' "$out" | python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read()))')
+            echo "::error::$enc"
+            exit $code
+          fi
 
       - name: Build (all targets)
         run: |
