@@ -19,6 +19,9 @@ jobs:
       - name: Show versions
         run: moon version --all
 
+      - name: Update module registry
+        run: moon update
+
       - name: Check (all targets)
         run: |
           set +e
