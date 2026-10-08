@@ -20,13 +20,40 @@ jobs:
         run: moon version --all
 
       - name: Check (all targets)
-        run: moon check --target all --deny-warn
+        run: |
+          run_step() {
+            set +e
+            out=$("$@" 2>&1)
+            code=$?
+            echo "$out"
+            if [ $code -ne 0 ]; then
+              echo "$out" | grep -E "Error|error\[|error:|╭|╰" | head -25 | while IFS= read -r line; do
+                echo "::error::$line"
+              done
+              exit $code
+            fi
+          }
+          run_step moon check --target all --deny-warn
 
       - name: Build (all targets)
-        run: moon build --target all
+        run: |
+          set +e
+          out=$(moon build --target all 2>&1); code=$?
+          echo "$out"
+          if [ $code -ne 0 ]; then
+            echo "$out" | grep -E "Error|error\[|error:" | head -25 | while IFS= read -r line; do echo "::error::$line"; done
+            exit $code
+          fi
 
       - name: Test (all targets)
-        run: moon test --target all
+        run: |
+          set +e
+          out=$(moon test --target all 2>&1); code=$?
+          echo "$out"
+          if [ $code -ne 0 ]; then
+            echo "$out" | grep "Total tests" | head -10 | while IFS= read -r line; do echo "::error::$line"; done
+            exit $code
+          fi
 
       - name: Demo smoke test over localhost
         run: |
