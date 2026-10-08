@@ -1,0 +1,17 @@
+// moonproxy runtime: native-only — real sockets come from async's native FFI.
+supported_targets = "native"
+
+import {
+  "1726914517-spec/moonproxy",
+  "moonbitlang/async",
+  "moonbitlang/async/http",
+  "moonbitlang/async/socket",
+  "moonbitlang/async/io",
+}
+
+// The async root (`with_task_group`, `sleep`) is used only by the native
+// end-to-end test, so the library-only build reports it as unused (alert 29).
+// It is genuinely needed for the over-the-wire tests; suppress that false
+// positive rather than drop a real dependency.
+
+warnings = "-alert_internal-29"
