@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  check-build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MoonBit toolchain
+        uses: moonbitlang/setup-moonbit@v1
+
+      - name: Show versions
+        run: moon version --all
+
+      - name: Check (all targets)
+        run: moon check --target all --deny-warn
+
+      - name: Build (all targets)
+        run: moon build --target all
+
+      - name: Test (all targets)
+        run: moon test --target all
+
+      - name: Demo smoke test over localhost
+        run: |
+          moon run cmd/main --target native &
+          PID=$!
+          for i in $(seq 1 20); do
+            curl -sf http://127.0.0.1:18080/ >/dev/null && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:18080/ | grep -q "hello from"
+          curl -sf http://127.0.0.1:18080/api/users | grep -q "hello from"
+          kill $PID
