@@ -12,7 +12,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install MoonBit toolchain
-        uses: moonbitlang/setup-moonbit@v1
+        uses: moonbit-community/setup-moonbit@main
+        with:
+          version: latest
 
       - name: Show versions
         run: moon version --all
