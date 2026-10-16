@@ -4,3 +4,12 @@ target/
 target
 .mooncakes/
 .moonagent/
+
+# local scratch
+.temp/
+*.log
+judge_req.json
+questions_response.json
+
+# application form is submitted as Markdown; the Word copy is local archive only
+申报书.docx
