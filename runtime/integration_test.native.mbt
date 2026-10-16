@@ -40,6 +40,50 @@ fn test_config() -> @moonproxy.ProxyConfig {
 }
 
 ///|
+fn probe_config() -> @moonproxy.ProxyConfig {
+  let only = @moonproxy.BackendPool::new("only").add(
+    @moonproxy.Backend::new("127.0.0.1", 18710),
+  )
+  @moonproxy.ProxyConfig::new(host="127.0.0.1", port=18780).add_route(
+    @moonproxy.Route::prefix("root", "/", only),
+  )
+}
+
+///|
+async test "runtime: active probe revives a backend after it comes back" {
+  @async.with_task_group(g => {
+    // A single-backend pool with threshold 1: one failed exchange trips it and
+    // one successful probe brings it back.
+    let health = @moonproxy.HealthPolicy::new(
+      unhealthy_threshold=1,
+      healthy_threshold=1,
+    )
+    let runtime = @runtime.Runtime::new(probe_config(), health~)
+    let tproxy = g.spawn(() => runtime.serve())
+    let tprobe = g.spawn(() => runtime.run_probes(interval_ms=100))
+    @async.sleep(400)
+
+    // The backend is not running yet. A request fails and trips it out of
+    // rotation, so the proxy answers 502 while nothing is healthy.
+    let (down_resp, _db) = @http.get("http://127.0.0.1:18780/")
+    assert_eq(down_resp.code, 502)
+
+    // Now start the backend. The active probe loop (every 100ms) should dial
+    // it, observe success and bring it back without any client traffic.
+    let tbackend = g.spawn(() => test_backend(18710, "revived"))
+    @async.sleep(800)
+
+    let (up_resp, _ub) = @http.get("http://127.0.0.1:18780/")
+    assert_eq(up_resp.code, 200)
+    assert_eq(up_resp.headers.get("x-served-by"), Some("revived"))
+
+    tbackend.cancel()
+    tproxy.cancel()
+    tprobe.cancel()
+  })
+}
+
+///|
 async test "runtime: balances over backends, forwards XFF and fails over" {
   @async.with_task_group(g => {
     let t1 = g.spawn(() => test_backend(18601, "backend-1"))

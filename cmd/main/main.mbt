@@ -56,6 +56,7 @@ fn print_banner() -> Unit {
   println("moonproxy demo is up")
   println("  proxy   : http://127.0.0.1:18080")
   println("  backends: 127.0.0.1:19001/19002/19003")
+  println("  active health probes run every 1s")
   println("try:")
   println("  curl -s http://127.0.0.1:18080/")
   println("  curl -s http://127.0.0.1:18080/api/users")
@@ -71,6 +72,7 @@ async fn main {
     g.spawn_bg(() => echo_backend(19003, "backend-3"))
     let runtime = @rt.Runtime::new(demo_config())
     g.spawn_bg(() => runtime.serve())
+    g.spawn_bg(() => runtime.run_probes(interval_ms=1000))
     print_banner()
     while true {
       @async.sleep(60000)

@@ -33,6 +33,14 @@ pub struct Backend {
   mut healthy : Bool
   mut failures : Int
   mut active_conns : Int
+  // Logical timestamp (milliseconds) of the last active health probe; 0 means
+  // this backend has never been probed. The scheduler compares it against the
+  // current tick to decide when a probe is due.
+  mut last_probe_ms : Int
+  // Traffic counters since the backend joined the pool, for observability.
+  mut total_requests : Int
+  mut success_count : Int
+  mut fail_count : Int
 }
 
 ///|
@@ -54,6 +62,10 @@ pub fn Backend::new(
     healthy: true,
     failures: 0,
     active_conns: 0,
+    last_probe_ms: 0,
+    total_requests: 0,
+    success_count: 0,
+    fail_count: 0,
   }
 }
 
@@ -83,6 +95,30 @@ pub fn Backend::host(self : Backend) -> String {
 /// The backend's port.
 pub fn Backend::port(self : Backend) -> Int {
   self.port
+}
+
+///|
+/// Logical timestamp of the last active probe (0 if never probed).
+pub fn Backend::last_probe_ms(self : Backend) -> Int {
+  self.last_probe_ms
+}
+
+///|
+/// Total requests dispatched to this backend since it joined the pool.
+pub fn Backend::total_requests(self : Backend) -> Int {
+  self.total_requests
+}
+
+///|
+/// Successful exchanges with this backend.
+pub fn Backend::success_count(self : Backend) -> Int {
+  self.success_count
+}
+
+///|
+/// Failed exchanges with this backend.
+pub fn Backend::fail_count(self : Backend) -> Int {
+  self.fail_count
 }
 
 ///|

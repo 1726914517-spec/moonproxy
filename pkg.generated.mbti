@@ -1,0 +1,187 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "1726914517-spec/moonproxy"
+
+// Values
+pub fn acquire(Array[Backend], Int) -> Unit
+
+pub fn can_retry_status(String, Int) -> Bool
+
+pub fn count_failure(Array[Backend], Int) -> Unit
+
+pub fn count_request(Array[Backend], Int) -> Unit
+
+pub fn count_success(Array[Backend], Int) -> Unit
+
+pub fn due_backends(Array[Backend], Int, ProbePolicy, only_unhealthy? : Bool) -> Array[Int]
+
+pub fn forward_request_headers(Array[(String, String)], String, String, String, String, RouteOptions) -> Array[(String, String)]
+
+pub fn forward_response_headers(Array[(String, String)]) -> Array[(String, String)]
+
+pub fn healthy_indices(Array[Backend]) -> Array[Int]
+
+pub fn host_matches(HostMatch, String) -> Bool
+
+pub fn is_idempotent(String) -> Bool
+
+pub fn is_retryable_status(Int) -> Bool
+
+pub fn mark_down(Array[Backend], Int) -> Unit
+
+pub fn mark_up(Array[Backend], Int) -> Unit
+
+pub fn normalize_host(String) -> String
+
+pub fn path_matches(PathMatch, String) -> Bool
+
+pub fn pick(Balancer, Array[Backend], client_key? : String, rand? : (Int) -> Int, exclude? : Array[Int]) -> Int?
+
+pub fn record_failure(Array[Backend], Int, HealthPolicy) -> Unit
+
+pub fn record_probe(Array[Backend], Int, Bool, HealthPolicy, Int) -> Unit
+
+pub fn record_success(Array[Backend], Int, HealthPolicy) -> Unit
+
+pub fn release(Array[Backend], Int) -> Unit
+
+pub fn route_matches(Route, String, String) -> Bool
+
+pub fn select_route(Array[Route], String, String) -> Route?
+
+pub fn snapshot(Array[Backend]) -> Array[BackendStats]
+
+pub fn specificity(Route) -> Int
+
+// Errors
+
+// Types and methods
+pub struct Backend {
+  host : String
+  port : Int
+  weight : Int
+  scheme : Scheme
+  mut healthy : Bool
+  mut failures : Int
+  mut active_conns : Int
+  mut last_probe_ms : Int
+  mut total_requests : Int
+  mut success_count : Int
+  mut fail_count : Int
+}
+pub fn Backend::address(Self) -> String
+pub fn Backend::fail_count(Self) -> Int
+pub fn Backend::host(Self) -> String
+pub fn Backend::is_healthy(Self) -> Bool
+pub fn Backend::last_probe_ms(Self) -> Int
+pub fn Backend::new(String, Int, weight? : Int, scheme? : Scheme) -> Self
+pub fn Backend::origin(Self) -> String
+pub fn Backend::port(Self) -> Int
+pub fn Backend::success_count(Self) -> Int
+pub fn Backend::total_requests(Self) -> Int
+
+pub struct BackendPool {
+  id : String
+  backends : Array[Backend]
+  policy : LBPolicy
+}
+pub fn BackendPool::add(Self, Backend) -> Self
+pub fn BackendPool::backends(Self) -> Array[Backend]
+pub fn BackendPool::id(Self) -> String
+pub fn BackendPool::new(String, policy? : LBPolicy) -> Self
+pub fn BackendPool::policy(Self) -> LBPolicy
+
+pub struct BackendStats {
+  address : String
+  healthy : Bool
+  weight : Int
+  active_conns : Int
+  total_requests : Int
+  success_count : Int
+  fail_count : Int
+}
+pub fn BackendStats::active_conns(Self) -> Int
+pub fn BackendStats::address(Self) -> String
+pub fn BackendStats::fail_count(Self) -> Int
+pub fn BackendStats::is_healthy(Self) -> Bool
+pub fn BackendStats::success_count(Self) -> Int
+pub fn BackendStats::total_requests(Self) -> Int
+
+pub struct Balancer {
+  policy : LBPolicy
+  mut cursor : Int
+  mut current : Array[Int]
+}
+pub fn Balancer::new(policy? : LBPolicy) -> Self
+
+pub struct HealthPolicy {
+  unhealthy_threshold : Int
+  healthy_threshold : Int
+}
+pub fn HealthPolicy::new(unhealthy_threshold? : Int, healthy_threshold? : Int) -> Self
+
+pub(all) enum HostMatch {
+  Any
+  Host(String)
+}
+
+pub(all) enum LBPolicy {
+  RoundRobin
+  WeightedRR
+  LeastConn
+  Random
+  IPHash
+}
+
+pub(all) enum PathMatch {
+  Exact(String)
+  Prefix(String)
+}
+
+pub struct ProbePolicy {
+  interval_ms : Int
+}
+pub fn ProbePolicy::interval_ms(Self) -> Int
+pub fn ProbePolicy::new(interval_ms? : Int) -> Self
+
+pub struct ProxyConfig {
+  listen_host : String
+  listen_port : Int
+  routes : Array[Route]
+}
+pub fn ProxyConfig::add_route(Self, Route) -> Self
+pub fn ProxyConfig::bind(Self) -> String
+pub fn ProxyConfig::listen_host(Self) -> String
+pub fn ProxyConfig::listen_port(Self) -> Int
+pub fn ProxyConfig::new(host? : String, port? : Int) -> Self
+pub fn ProxyConfig::routes(Self) -> Array[Route]
+
+pub struct Route {
+  id : String
+  host : HostMatch
+  path : PathMatch
+  pool : BackendPool
+  options : RouteOptions
+}
+pub fn Route::exact(String, String, BackendPool) -> Self
+pub fn Route::new(String, HostMatch, PathMatch, BackendPool, options? : RouteOptions) -> Self
+pub fn Route::options(Self) -> RouteOptions
+pub fn Route::pool(Self) -> BackendPool
+pub fn Route::prefix(String, String, BackendPool) -> Self
+
+pub struct RouteOptions {
+  preserve_host : Bool
+  forward_headers : Bool
+  failover : Bool
+}
+pub fn RouteOptions::defaults() -> Self
+pub fn RouteOptions::new(preserve_host? : Bool, forward_headers? : Bool, failover? : Bool) -> Self
+
+pub(all) enum Scheme {
+  Http
+  Https
+}
+pub fn Scheme::default_port(Self) -> Int
+
+// Type aliases
+
+// Traits

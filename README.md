@@ -20,8 +20,13 @@ retry) lives in a portable core that compiles to `wasm`, `wasm-gc`, `js` and
 - **Connection-safe header forwarding** — strips hop-by-hop and per-connection
   headers, then adds `X-Forwarded-For`, `X-Forwarded-Proto`, `X-Forwarded-Host`
   and `X-Real-IP`, and rewrites `Host` to the upstream.
-- **Passive health tracking** — consecutive failures trip a backend and
-  consecutive successes bring it back; tripped backends are skipped.
+- **Active and passive health tracking** — passive health trips a backend after
+  consecutive real failures and restores it after a run of successes; an active
+  probe loop additionally dials backends that are out of rotation every interval
+  so a recovered server is brought back without waiting for traffic.
+- **Per-backend metrics** — total requests, successes and failures are counted
+  per backend and exposed through a snapshot, alongside live health and
+  connection state.
 - **Failover and retry** — a connection failure retries another backend for any
   method (nothing was sent); a `5xx` is retried elsewhere only for idempotent
   methods; a failure after the request body started is never replayed.
@@ -69,7 +74,9 @@ curl -s -X POST http://127.0.0.1:18080/ -d 'hello'
 ```
 
 The `/api` pool deliberately includes a closed port; requests still succeed
-because the proxy fails over to the live backend.
+because the proxy fails over to the live backend. The demo also spawns an active
+probe loop every second, so a backend that comes back online is automatically
+re-added to rotation.
 
 ## Configuration as code
 
@@ -82,6 +89,7 @@ let web = BackendPool::new("web", policy=WeightedRR)
 let config = ProxyConfig::new(host="0.0.0.0", port=80)
   .add_route(Route::prefix("root", "/", web))
 let runtime = @runtime.Runtime::new(config)
+g.spawn_bg(() => runtime.run_probes(interval_ms=1000)) // active health
 runtime.serve()
 ```
 
@@ -94,9 +102,10 @@ moon build --target all
 moon test  --target all
 ```
 
-The portable core has 25 black-box tests that run on all four targets; the
-native runtime additionally has an end-to-end test that brings up real
-backends and a real proxy over localhost.
+The portable core has 34 black-box tests that run on all four targets; the
+native runtime additionally has two end-to-end tests that bring up real
+backends and a real proxy over localhost, including active-probe recovery of a
+backend that comes back online.
 
 ## Engineering boundaries (v0.1)
 
@@ -104,11 +113,11 @@ Being explicit about what this release does not do:
 
 - The `Host` sent upstream is the dialed upstream address — the nginx default
   (`$proxy_host`). The original host is carried in `X-Forwarded-Host`.
-- Health is passive (driven by real connection/response outcomes); a periodic
-  active probe is not included yet.
+- The active probe is a TCP-connect check on a fixed interval; it does not yet
+  send an HTTP health path or honor custom probe timeouts.
 - The edge speaks HTTP/1.1; HTTP/2 and TLS termination are not in this release.
-- The decision core is portable, but the socket runtime is native-only, since
-  it relies on async's native socket FFI.
+- The decision core is portable, but the socket runtime (including the probe
+  dial loop) is native-only, since it relies on async's native socket FFI.
 
 ## License
 

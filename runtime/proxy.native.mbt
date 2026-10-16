@@ -132,6 +132,7 @@ async fn Runtime::proxy_to_route(
       Some(idx) => {
         tried.push(idx)
         @moonproxy.acquire(backends, idx)
+        @moonproxy.count_request(backends, idx)
         let outcome = forward_one(
           route,
           req,
@@ -147,21 +148,25 @@ async fn Runtime::proxy_to_route(
         match outcome {
           Delivered => {
             @moonproxy.record_success(backends, idx, self.health)
+            @moonproxy.count_success(backends, idx)
             done = true
           }
           ConnectFailed => {
             @moonproxy.record_failure(backends, idx, self.health)
+            @moonproxy.count_failure(backends, idx)
             if !opts.failover {
               send_bad_gateway(conn)
               done = true
             }
           }
           BodyFailed => {
+            @moonproxy.count_failure(backends, idx)
             send_bad_gateway(conn)
             done = true
           }
           RetryableStatus => {
             @moonproxy.record_failure(backends, idx, self.health)
+            @moonproxy.count_failure(backends, idx)
             if !opts.failover {
               send_bad_gateway(conn)
               done = true
