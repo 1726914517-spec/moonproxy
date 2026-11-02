@@ -13,3 +13,6 @@ questions_response.json
 
 # application form is submitted as Markdown; Word copies are local archive only
 *.docx
+
+# JiuwenSwarm runtime file operation logs
+.agent_history/

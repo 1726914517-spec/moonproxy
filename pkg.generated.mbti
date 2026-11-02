@@ -2,47 +2,47 @@
 package "1726914517-spec/moonproxy"
 
 // Values
-pub fn acquire(Array[Backend], Int) -> Unit
+pub fn acquire(Array[Backend], Int32) -> Unit
 
-pub fn can_retry_status(String, Int) -> Bool
+pub fn can_retry_status(String, Int32) -> Bool
 
-pub fn count_failure(Array[Backend], Int) -> Unit
+pub fn count_failure(Array[Backend], Int32) -> Unit
 
-pub fn count_request(Array[Backend], Int) -> Unit
+pub fn count_request(Array[Backend], Int32) -> Unit
 
-pub fn count_success(Array[Backend], Int) -> Unit
+pub fn count_success(Array[Backend], Int32) -> Unit
 
-pub fn due_backends(Array[Backend], Int, ProbePolicy, only_unhealthy? : Bool) -> Array[Int]
+pub fn due_backends(Array[Backend], Int32, ProbePolicy, only_unhealthy? : Bool) -> Array[Int32]
 
 pub fn forward_request_headers(Array[(String, String)], String, String, String, String, RouteOptions) -> Array[(String, String)]
 
 pub fn forward_response_headers(Array[(String, String)]) -> Array[(String, String)]
 
-pub fn healthy_indices(Array[Backend]) -> Array[Int]
+pub fn healthy_indices(Array[Backend]) -> Array[Int32]
 
 pub fn host_matches(HostMatch, String) -> Bool
 
 pub fn is_idempotent(String) -> Bool
 
-pub fn is_retryable_status(Int) -> Bool
+pub fn is_retryable_status(Int32) -> Bool
 
-pub fn mark_down(Array[Backend], Int) -> Unit
+pub fn mark_down(Array[Backend], Int32) -> Unit
 
-pub fn mark_up(Array[Backend], Int) -> Unit
+pub fn mark_up(Array[Backend], Int32) -> Unit
 
 pub fn normalize_host(String) -> String
 
 pub fn path_matches(PathMatch, String) -> Bool
 
-pub fn pick(Balancer, Array[Backend], client_key? : String, rand? : (Int) -> Int, exclude? : Array[Int]) -> Int?
+pub fn pick(Balancer, Array[Backend], client_key? : String, rand? : (Int32) -> Int32, exclude? : Array[Int32]) -> Int32?
 
-pub fn record_failure(Array[Backend], Int, HealthPolicy) -> Unit
+pub fn record_failure(Array[Backend], Int32, HealthPolicy) -> Unit
 
-pub fn record_probe(Array[Backend], Int, Bool, HealthPolicy, Int) -> Unit
+pub fn record_probe(Array[Backend], Int32, Bool, HealthPolicy, Int32) -> Unit
 
-pub fn record_success(Array[Backend], Int, HealthPolicy) -> Unit
+pub fn record_success(Array[Backend], Int32, HealthPolicy) -> Unit
 
-pub fn release(Array[Backend], Int) -> Unit
+pub fn release(Array[Backend], Int32) -> Unit
 
 pub fn route_matches(Route, String, String) -> Bool
 
@@ -50,34 +50,34 @@ pub fn select_route(Array[Route], String, String) -> Route?
 
 pub fn snapshot(Array[Backend]) -> Array[BackendStats]
 
-pub fn specificity(Route) -> Int
+pub fn specificity(Route) -> Int32
 
 // Errors
 
 // Types and methods
 pub struct Backend {
   host : String
-  port : Int
-  weight : Int
+  port : Int32
+  weight : Int32
   scheme : Scheme
   mut healthy : Bool
-  mut failures : Int
-  mut active_conns : Int
-  mut last_probe_ms : Int
-  mut total_requests : Int
-  mut success_count : Int
-  mut fail_count : Int
+  mut failures : Int32
+  mut active_conns : Int32
+  mut last_probe_ms : Int32
+  mut total_requests : Int32
+  mut success_count : Int32
+  mut fail_count : Int32
 }
 pub fn Backend::address(Self) -> String
-pub fn Backend::fail_count(Self) -> Int
+pub fn Backend::fail_count(Self) -> Int32
 pub fn Backend::host(Self) -> String
 pub fn Backend::is_healthy(Self) -> Bool
-pub fn Backend::last_probe_ms(Self) -> Int
-pub fn Backend::new(String, Int, weight? : Int, scheme? : Scheme) -> Self
+pub fn Backend::last_probe_ms(Self) -> Int32
+pub fn Backend::new(String, Int32, weight? : Int32, scheme? : Scheme) -> Self
 pub fn Backend::origin(Self) -> String
-pub fn Backend::port(Self) -> Int
-pub fn Backend::success_count(Self) -> Int
-pub fn Backend::total_requests(Self) -> Int
+pub fn Backend::port(Self) -> Int32
+pub fn Backend::success_count(Self) -> Int32
+pub fn Backend::total_requests(Self) -> Int32
 
 pub struct BackendPool {
   id : String
@@ -93,31 +93,31 @@ pub fn BackendPool::policy(Self) -> LBPolicy
 pub struct BackendStats {
   address : String
   healthy : Bool
-  weight : Int
-  active_conns : Int
-  total_requests : Int
-  success_count : Int
-  fail_count : Int
+  weight : Int32
+  active_conns : Int32
+  total_requests : Int32
+  success_count : Int32
+  fail_count : Int32
 }
-pub fn BackendStats::active_conns(Self) -> Int
+pub fn BackendStats::active_conns(Self) -> Int32
 pub fn BackendStats::address(Self) -> String
-pub fn BackendStats::fail_count(Self) -> Int
+pub fn BackendStats::fail_count(Self) -> Int32
 pub fn BackendStats::is_healthy(Self) -> Bool
-pub fn BackendStats::success_count(Self) -> Int
-pub fn BackendStats::total_requests(Self) -> Int
+pub fn BackendStats::success_count(Self) -> Int32
+pub fn BackendStats::total_requests(Self) -> Int32
 
 pub struct Balancer {
   policy : LBPolicy
-  mut cursor : Int
-  mut current : Array[Int]
+  mut cursor : Int32
+  mut current : Array[Int32]
 }
 pub fn Balancer::new(policy? : LBPolicy) -> Self
 
 pub struct HealthPolicy {
-  unhealthy_threshold : Int
-  healthy_threshold : Int
+  unhealthy_threshold : Int32
+  healthy_threshold : Int32
 }
-pub fn HealthPolicy::new(unhealthy_threshold? : Int, healthy_threshold? : Int) -> Self
+pub fn HealthPolicy::new(unhealthy_threshold? : Int32, healthy_threshold? : Int32) -> Self
 
 pub(all) enum HostMatch {
   Any
@@ -138,21 +138,21 @@ pub(all) enum PathMatch {
 }
 
 pub struct ProbePolicy {
-  interval_ms : Int
+  interval_ms : Int32
 }
-pub fn ProbePolicy::interval_ms(Self) -> Int
-pub fn ProbePolicy::new(interval_ms? : Int) -> Self
+pub fn ProbePolicy::interval_ms(Self) -> Int32
+pub fn ProbePolicy::new(interval_ms? : Int32) -> Self
 
 pub struct ProxyConfig {
   listen_host : String
-  listen_port : Int
+  listen_port : Int32
   routes : Array[Route]
 }
 pub fn ProxyConfig::add_route(Self, Route) -> Self
 pub fn ProxyConfig::bind(Self) -> String
 pub fn ProxyConfig::listen_host(Self) -> String
-pub fn ProxyConfig::listen_port(Self) -> Int
-pub fn ProxyConfig::new(host? : String, port? : Int) -> Self
+pub fn ProxyConfig::listen_port(Self) -> Int32
+pub fn ProxyConfig::new(host? : String, port? : Int32) -> Self
 pub fn ProxyConfig::routes(Self) -> Array[Route]
 
 pub struct Route {
@@ -180,7 +180,7 @@ pub(all) enum Scheme {
   Http
   Https
 }
-pub fn Scheme::default_port(Self) -> Int
+pub fn Scheme::default_port(Self) -> Int32
 
 // Type aliases
 
