@@ -80,7 +80,7 @@ re-added to rotation.
 
 ## Configuration as code
 
-There is no config file parser in v0.1 — a proxy is built with the core API:
+There is no config file parser yet — a proxy is built with the core API:
 
 ```moonbit nocheck
 let web = BackendPool::new("web", policy=WeightedRR)
@@ -107,7 +107,7 @@ native runtime additionally has two end-to-end tests that bring up real
 backends and a real proxy over localhost, including active-probe recovery of a
 backend that comes back online.
 
-## Engineering boundaries (v0.1)
+## Engineering boundaries
 
 Being explicit about what this release does not do:
 
