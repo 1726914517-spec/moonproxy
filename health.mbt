@@ -12,15 +12,15 @@
 /// healthy only after `healthy_threshold` consecutive successes while it was
 /// down — a single lucky probe should not flap a server back into rotation.
 pub struct HealthPolicy {
-  unhealthy_threshold : Int
-  healthy_threshold : Int
+  unhealthy_threshold : Int32
+  healthy_threshold : Int32
 }
 
 ///|
 /// Build a policy; thresholds below 1 are treated as 1.
 pub fn HealthPolicy::new(
-  unhealthy_threshold? : Int = 2,
-  healthy_threshold? : Int = 2,
+  unhealthy_threshold~ : Int32 = 2,
+  healthy_threshold~ : Int32 = 2,
 ) -> HealthPolicy {
   {
     unhealthy_threshold: if unhealthy_threshold < 1 {
@@ -41,7 +41,7 @@ pub fn HealthPolicy::new(
 /// was being held out, require a full run of successes before re-enabling it.
 pub fn record_success(
   backends : Array[Backend],
-  idx : Int,
+  idx : Int32,
   policy : HealthPolicy,
 ) -> Unit {
   let b = backends[idx]
@@ -62,7 +62,7 @@ pub fn record_success(
 /// failure streak reaches the threshold, pull the backend out of rotation.
 pub fn record_failure(
   backends : Array[Backend],
-  idx : Int,
+  idx : Int32,
   policy : HealthPolicy,
 ) -> Unit {
   let b = backends[idx]
@@ -81,7 +81,7 @@ pub fn record_failure(
 ///|
 /// Mark a backend directly down (used when a connection cannot even be
 /// established — an unambiguous failure worth a hard removal).
-pub fn mark_down(backends : Array[Backend], idx : Int) -> Unit {
+pub fn mark_down(backends : Array[Backend], idx : Int32) -> Unit {
   let b = backends[idx]
   b.healthy = false
   b.failures = 0
@@ -90,7 +90,7 @@ pub fn mark_down(backends : Array[Backend], idx : Int) -> Unit {
 
 ///|
 /// Mark a backend directly up after a successful active probe.
-pub fn mark_up(backends : Array[Backend], idx : Int) -> Unit {
+pub fn mark_up(backends : Array[Backend], idx : Int32) -> Unit {
   let b = backends[idx]
   b.healthy = true
   b.failures = 0
@@ -106,7 +106,7 @@ pub fn Backend::is_healthy(self : Backend) -> Bool {
 ///|
 /// Record that a request has started using backend `idx`, for least-connections
 /// balancing.
-pub fn acquire(backends : Array[Backend], idx : Int) -> Unit {
+pub fn acquire(backends : Array[Backend], idx : Int32) -> Unit {
   let b = backends[idx]
   b.active_conns = b.active_conns + 1
   backends[idx] = b
@@ -115,7 +115,7 @@ pub fn acquire(backends : Array[Backend], idx : Int) -> Unit {
 ///|
 /// Record that a request has finished using backend `idx`; the count never goes
 /// negative.
-pub fn release(backends : Array[Backend], idx : Int) -> Unit {
+pub fn release(backends : Array[Backend], idx : Int32) -> Unit {
   let b = backends[idx]
   if b.active_conns > 0 {
     b.active_conns = b.active_conns - 1
@@ -126,8 +126,8 @@ pub fn release(backends : Array[Backend], idx : Int) -> Unit {
 ///|
 /// The indices of every healthy backend, in array order. Returning indices
 /// (rather than copies) lets the runtime select and then mutate the entry.
-pub fn healthy_indices(backends : Array[Backend]) -> Array[Int] {
-  let out : Array[Int] = []
+pub fn healthy_indices(backends : Array[Backend]) -> Array[Int32] {
+  let out : Array[Int32] = []
   let mut i = 0
   while i < backends.length() {
     if backends[i].healthy {

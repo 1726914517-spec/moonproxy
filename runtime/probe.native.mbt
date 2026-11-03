@@ -22,7 +22,7 @@ async fn tcp_reachable(address : String) -> Bool {
 /// timing is deterministic and independent of the wall clock.
 pub async fn Runtime::run_probes(
   self : Runtime,
-  interval_ms? : Int = 1000,
+  interval_ms~ : Int32 = 1000,
 ) -> Unit {
   let policy = @moonproxy.ProbePolicy::new(interval_ms~)
   let health = self.health

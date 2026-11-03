@@ -10,16 +10,16 @@
 pub struct BackendStats {
   address : String
   healthy : Bool
-  weight : Int
-  active_conns : Int
-  total_requests : Int
-  success_count : Int
-  fail_count : Int
+  weight : Int32
+  active_conns : Int32
+  total_requests : Int32
+  success_count : Int32
+  fail_count : Int32
 }
 
 ///|
 /// Count one request dispatched to backend `idx`.
-pub fn count_request(backends : Array[Backend], idx : Int) -> Unit {
+pub fn count_request(backends : Array[Backend], idx : Int32) -> Unit {
   let b = backends[idx]
   b.total_requests = b.total_requests + 1
   backends[idx] = b
@@ -27,7 +27,7 @@ pub fn count_request(backends : Array[Backend], idx : Int) -> Unit {
 
 ///|
 /// Count one successful exchange with backend `idx`.
-pub fn count_success(backends : Array[Backend], idx : Int) -> Unit {
+pub fn count_success(backends : Array[Backend], idx : Int32) -> Unit {
   let b = backends[idx]
   b.success_count = b.success_count + 1
   backends[idx] = b
@@ -35,7 +35,7 @@ pub fn count_success(backends : Array[Backend], idx : Int) -> Unit {
 
 ///|
 /// Count one failed exchange with backend `idx`.
-pub fn count_failure(backends : Array[Backend], idx : Int) -> Unit {
+pub fn count_failure(backends : Array[Backend], idx : Int32) -> Unit {
   let b = backends[idx]
   b.fail_count = b.fail_count + 1
   backends[idx] = b
@@ -73,24 +73,24 @@ pub fn BackendStats::is_healthy(self : BackendStats) -> Bool {
 
 ///|
 /// Requests dispatched at the snapshot.
-pub fn BackendStats::total_requests(self : BackendStats) -> Int {
+pub fn BackendStats::total_requests(self : BackendStats) -> Int32 {
   self.total_requests
 }
 
 ///|
 /// Successful exchanges at the snapshot.
-pub fn BackendStats::success_count(self : BackendStats) -> Int {
+pub fn BackendStats::success_count(self : BackendStats) -> Int32 {
   self.success_count
 }
 
 ///|
 /// Failed exchanges at the snapshot.
-pub fn BackendStats::fail_count(self : BackendStats) -> Int {
+pub fn BackendStats::fail_count(self : BackendStats) -> Int32 {
   self.fail_count
 }
 
 ///|
 /// In-flight requests at the snapshot.
-pub fn BackendStats::active_conns(self : BackendStats) -> Int {
+pub fn BackendStats::active_conns(self : BackendStats) -> Int32 {
   self.active_conns
 }

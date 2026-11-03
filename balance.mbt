@@ -9,13 +9,13 @@
 /// Per-pool balancer state.
 pub struct Balancer {
   policy : LBPolicy
-  mut cursor : Int
-  mut current : Array[Int]
+  mut cursor : Int32
+  mut current : Array[Int32]
 }
 
 ///|
 /// Build a balancer for the given policy.
-pub fn Balancer::new(policy? : LBPolicy = RoundRobin) -> Balancer {
+pub fn Balancer::new(policy~ : LBPolicy = RoundRobin) -> Balancer {
   { policy, cursor: 0, current: [], }
 }
 
@@ -23,9 +23,9 @@ pub fn Balancer::new(policy? : LBPolicy = RoundRobin) -> Balancer {
 /// FNV-1a (32-bit) over a key's codepoints — a stable, dependency-free hash
 /// used to pin a client to a backend. Keys here are IP addresses (ASCII), so
 /// codepoint hashing and byte hashing agree. The offset basis exceeds the
-/// signed Int range, so it is built as a UInt by reinterpreting its negative
-/// two's-complement pattern.
-fn fnv1a(key : String) -> UInt {
+/// signed Int32 range, so it is built as a UInt32 by reinterpreting its
+/// negative two's-complement pattern.
+fn fnv1a(key : String) -> UInt32 {
   let mut h = (-2128831035).reinterpret_as_uint() // FNV offset basis 2166136261
   let prime = (16777619).reinterpret_as_uint()
   for c in key {
@@ -38,9 +38,9 @@ fn fnv1a(key : String) -> UInt {
 ///|
 /// Make sure the weighted-roller credit array matches the backend count,
 /// resetting it when the pool resized so stale credits never leak.
-fn ensure_current(balancer : Balancer, n : Int) -> Unit {
+fn ensure_current(balancer : Balancer, n : Int32) -> Unit {
   if balancer.current.length() != n {
-    let zeros : Array[Int] = []
+    let zeros : Array[Int32] = []
     let mut i = 0
     while i < n {
       zeros.push(0)
@@ -52,7 +52,7 @@ fn ensure_current(balancer : Balancer, n : Int) -> Unit {
 
 ///|
 /// Round-robin pick over the healthy subset.
-fn pick_round_robin(balancer : Balancer, healthy : Array[Int]) -> Int {
+fn pick_round_robin(balancer : Balancer, healthy : Array[Int32]) -> Int32 {
   let n = healthy.length()
   let choice = healthy[balancer.cursor % n]
   balancer.cursor = balancer.cursor + 1
@@ -66,8 +66,8 @@ fn pick_round_robin(balancer : Balancer, healthy : Array[Int]) -> Int {
 fn pick_weighted(
   balancer : Balancer,
   backends : Array[Backend],
-  healthy : Array[Int],
-) -> Int {
+  healthy : Array[Int32],
+) -> Int32 {
   ensure_current(balancer, backends.length())
   let mut total = 0
   for i in healthy {
@@ -87,7 +87,7 @@ fn pick_weighted(
 ///|
 /// Least-connections pick: the healthy backend with the fewest in-flight
 /// requests; ties resolve to the first such backend.
-fn pick_least_conn(backends : Array[Backend], healthy : Array[Int]) -> Int {
+fn pick_least_conn(backends : Array[Backend], healthy : Array[Int32]) -> Int32 {
   let mut best = healthy[0]
   for i in healthy {
     if backends[i].active_conns < backends[best].active_conns {
@@ -107,12 +107,12 @@ fn pick_least_conn(backends : Array[Backend], healthy : Array[Int]) -> Int {
 pub fn pick(
   balancer : Balancer,
   backends : Array[Backend],
-  client_key? : String = "",
-  rand? : (Int) -> Int,
-  exclude? : Array[Int] = [],
-) -> Int? {
+  client_key~ : String = "",
+  rand? : (Int32) -> Int32,
+  exclude~ : Array[Int32] = [],
+) -> Int32? {
   let all_healthy = healthy_indices(backends)
-  let healthy : Array[Int] = []
+  let healthy : Array[Int32] = []
   for idx in all_healthy {
     if !exclude.contains(idx) {
       healthy.push(idx)

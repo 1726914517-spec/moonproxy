@@ -24,7 +24,7 @@ fn demo_config() -> @lib.ProxyConfig {
 ///|
 /// A tiny upstream that reports which backend served and the headers the proxy
 /// sent, so forwarding is visible in the response body.
-async fn echo_backend(port : Int, name : String) -> Unit {
+async fn echo_backend(port : Int32, name : String) -> Unit {
   let addr = @socket.Addr::parse("127.0.0.1:" + port.to_string())
   let server = @http.Server(addr, reuse_addr=true)
   server.run_forever(

@@ -3,7 +3,7 @@
 // over localhost sockets. These prove the portable decision core and the
 // socket runtime meet on the wire.
 
-async fn test_backend(port : Int, name : String) -> Unit {
+async fn test_backend(port : Int32, name : String) -> Unit {
   let addr = @socket.Addr::parse("127.0.0.1:" + port.to_string())
   let server = @http.Server(addr, reuse_addr=true)
   server.run_forever(

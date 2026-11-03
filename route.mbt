@@ -46,7 +46,7 @@ pub fn route_matches(route : Route, host : String, path : String) -> Bool {
 /// A route's specificity score; higher wins. Named hosts outrank any host, and
 /// within the same host exact paths outrank prefixes, with longer prefixes more
 /// specific than shorter ones.
-pub fn specificity(route : Route) -> Int {
+pub fn specificity(route : Route) -> Int32 {
   let host_score = match route.host {
     Any => 0
     Host(_) => 1_000_000

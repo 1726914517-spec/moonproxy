@@ -18,13 +18,13 @@ pub fn is_idempotent(meth : String) -> Bool {
 /// Whether an upstream status is worth retrying on another backend: any 5xx
 /// server error. Other statuses are the backend's deliberate answer and are
 /// passed through.
-pub fn is_retryable_status(status : Int) -> Bool {
+pub fn is_retryable_status(status : Int32) -> Bool {
   status >= 500 && status <= 599
 }
 
 ///|
 /// Whether a request that saw `status` from an upstream may be retried on a
 /// peer: a retryable status from an idempotent method.
-pub fn can_retry_status(meth : String, status : Int) -> Bool {
+pub fn can_retry_status(meth : String, status : Int32) -> Bool {
   is_retryable_status(status) && is_idempotent(meth)
 }

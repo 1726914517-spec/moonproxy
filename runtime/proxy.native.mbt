@@ -32,7 +32,7 @@ pub struct Runtime {
 /// Build a runtime; the health policy defaults to a threshold of 2.
 pub fn Runtime::new(
   config : @moonproxy.ProxyConfig,
-  health? : @moonproxy.HealthPolicy = @moonproxy.HealthPolicy::new(),
+  health~ : @moonproxy.HealthPolicy = @moonproxy.HealthPolicy::new(),
 ) -> Runtime {
   let balancers : Map[String, @moonproxy.Balancer] = Map([])
   { config, balancers, health, }
@@ -121,7 +121,7 @@ async fn Runtime::proxy_to_route(
   let meth = method_to_string(req.meth)
   let opts = route.options()
   let incoming = headers_to_pairs(req.headers)
-  let tried : Array[Int] = []
+  let tried : Array[Int32] = []
   let mut done = false
   while !done {
     match @moonproxy.pick(bal, backends, client_key=client_ip, exclude=tried) {

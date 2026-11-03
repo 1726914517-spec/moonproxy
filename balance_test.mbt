@@ -62,7 +62,7 @@ test "random policy uses the injected RNG" {
   let bal = @moonproxy.Balancer::new(policy=@moonproxy.Random)
   let idx = Ref(0)
   let seq = [2, 0, 1]
-  let rand = fn(_n : Int) -> Int {
+  let rand = fn(_n : Int32) -> Int32 {
     let v = seq[idx.val]
     idx.val = idx.val + 1
     v

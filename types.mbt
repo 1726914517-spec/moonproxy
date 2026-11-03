@@ -14,7 +14,7 @@ pub(all) enum Scheme {
 
 ///|
 /// The default port a scheme implies when a backend names none.
-pub fn Scheme::default_port(self : Scheme) -> Int {
+pub fn Scheme::default_port(self : Scheme) -> Int32 {
   match self {
     Http => 80
     Https => 443
@@ -27,20 +27,20 @@ pub fn Scheme::default_port(self : Scheme) -> Int {
 /// identity and weight are fixed configuration.
 pub struct Backend {
   host : String
-  port : Int
-  weight : Int
+  port : Int32
+  weight : Int32
   scheme : Scheme
   mut healthy : Bool
-  mut failures : Int
-  mut active_conns : Int
+  mut failures : Int32
+  mut active_conns : Int32
   // Logical timestamp (milliseconds) of the last active health probe; 0 means
   // this backend has never been probed. The scheduler compares it against the
   // current tick to decide when a probe is due.
-  mut last_probe_ms : Int
+  mut last_probe_ms : Int32
   // Traffic counters since the backend joined the pool, for observability.
-  mut total_requests : Int
-  mut success_count : Int
-  mut fail_count : Int
+  mut total_requests : Int32
+  mut success_count : Int32
+  mut fail_count : Int32
 }
 
 ///|
@@ -49,9 +49,9 @@ pub struct Backend {
 /// pool's share. A backend starts healthy and assumed reachable.
 pub fn Backend::new(
   host : String,
-  port : Int,
-  weight? : Int = 1,
-  scheme? : Scheme = Http,
+  port : Int32,
+  weight~ : Int32 = 1,
+  scheme~ : Scheme = Http,
 ) -> Backend {
   let w = if weight < 1 { 1 } else { weight }
   {
@@ -93,31 +93,31 @@ pub fn Backend::host(self : Backend) -> String {
 
 ///|
 /// The backend's port.
-pub fn Backend::port(self : Backend) -> Int {
+pub fn Backend::port(self : Backend) -> Int32 {
   self.port
 }
 
 ///|
 /// Logical timestamp of the last active probe (0 if never probed).
-pub fn Backend::last_probe_ms(self : Backend) -> Int {
+pub fn Backend::last_probe_ms(self : Backend) -> Int32 {
   self.last_probe_ms
 }
 
 ///|
 /// Total requests dispatched to this backend since it joined the pool.
-pub fn Backend::total_requests(self : Backend) -> Int {
+pub fn Backend::total_requests(self : Backend) -> Int32 {
   self.total_requests
 }
 
 ///|
 /// Successful exchanges with this backend.
-pub fn Backend::success_count(self : Backend) -> Int {
+pub fn Backend::success_count(self : Backend) -> Int32 {
   self.success_count
 }
 
 ///|
 /// Failed exchanges with this backend.
-pub fn Backend::fail_count(self : Backend) -> Int {
+pub fn Backend::fail_count(self : Backend) -> Int32 {
   self.fail_count
 }
 
@@ -166,7 +166,7 @@ pub struct BackendPool {
 /// Start an empty pool with the given id and policy.
 pub fn BackendPool::new(
   id : String,
-  policy? : LBPolicy = RoundRobin,
+  policy~ : LBPolicy = RoundRobin,
 ) -> BackendPool {
   { id, backends: [], policy, }
 }
@@ -219,9 +219,9 @@ pub fn RouteOptions::defaults() -> RouteOptions {
 ///|
 /// Build options with explicit toggles; any omitted field takes the default.
 pub fn RouteOptions::new(
-  preserve_host? : Bool = false,
-  forward_headers? : Bool = true,
-  failover? : Bool = true,
+  preserve_host~ : Bool = false,
+  forward_headers~ : Bool = true,
+  failover~ : Bool = true,
 ) -> RouteOptions {
   { preserve_host, forward_headers, failover, }
 }
@@ -243,7 +243,7 @@ pub fn Route::new(
   host : HostMatch,
   path : PathMatch,
   pool : BackendPool,
-  options? : RouteOptions = RouteOptions::defaults(),
+  options~ : RouteOptions = RouteOptions::defaults(),
 ) -> Route {
   { id, host, path, pool, options, }
 }
@@ -277,15 +277,15 @@ pub fn Route::options(self : Route) -> RouteOptions {
 /// table. Routes are matched by specificity, not array order.
 pub struct ProxyConfig {
   listen_host : String
-  listen_port : Int
+  listen_port : Int32
   routes : Array[Route]
 }
 
 ///|
 /// Start a config bound to `host:port`; add routes with `add_route`.
 pub fn ProxyConfig::new(
-  host? : String = "127.0.0.1",
-  port? : Int = 8080,
+  host~ : String = "127.0.0.1",
+  port~ : Int32 = 8080,
 ) -> ProxyConfig {
   { listen_host: host, listen_port: port, routes: [], }
 }
@@ -312,7 +312,7 @@ pub fn ProxyConfig::listen_host(self : ProxyConfig) -> String {
 
 ///|
 /// The port the listener binds.
-pub fn ProxyConfig::listen_port(self : ProxyConfig) -> Int {
+pub fn ProxyConfig::listen_port(self : ProxyConfig) -> Int32 {
   self.listen_port
 }
 

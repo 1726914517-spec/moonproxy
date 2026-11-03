@@ -12,18 +12,18 @@
 ///|
 /// How often a backend that is down is actively probed.
 pub struct ProbePolicy {
-  interval_ms : Int
+  interval_ms : Int32
 }
 
 ///|
 /// Build a probe policy; an interval below 1ms is treated as 1ms.
-pub fn ProbePolicy::new(interval_ms? : Int = 1000) -> ProbePolicy {
+pub fn ProbePolicy::new(interval_ms~ : Int32 = 1000) -> ProbePolicy {
   { interval_ms: if interval_ms < 1 { 1 } else { interval_ms }, }
 }
 
 ///|
 /// The configured probe interval in milliseconds.
-pub fn ProbePolicy::interval_ms(self : ProbePolicy) -> Int {
+pub fn ProbePolicy::interval_ms(self : ProbePolicy) -> Int32 {
   self.interval_ms
 }
 
@@ -35,11 +35,11 @@ pub fn ProbePolicy::interval_ms(self : ProbePolicy) -> Int {
 /// probed (`last_probe_ms == 0`) or at least one interval has elapsed.
 pub fn due_backends(
   backends : Array[Backend],
-  now_ms : Int,
+  now_ms : Int32,
   policy : ProbePolicy,
-  only_unhealthy? : Bool = true,
-) -> Array[Int] {
-  let out : Array[Int] = []
+  only_unhealthy~ : Bool = true,
+) -> Array[Int32] {
+  let out : Array[Int32] = []
   let mut i = 0
   while i < backends.length() {
     let b = backends[i]
@@ -61,10 +61,10 @@ pub fn due_backends(
 /// successes (no flap from a single lucky dial).
 pub fn record_probe(
   backends : Array[Backend],
-  idx : Int,
+  idx : Int32,
   ok : Bool,
   health : HealthPolicy,
-  now_ms : Int,
+  now_ms : Int32,
 ) -> Unit {
   let b = backends[idx]
   b.last_probe_ms = now_ms
