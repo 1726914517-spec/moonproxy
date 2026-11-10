@@ -102,10 +102,11 @@ moon build --target all
 moon test  --target all
 ```
 
-The portable core has 34 black-box tests that run on all four targets; the
-native runtime additionally has two end-to-end tests that bring up real
-backends and a real proxy over localhost, including active-probe recovery of a
-backend that comes back online.
+The portable core has 36 black-box tests that run on all four targets; the
+native runtime additionally has five end-to-end tests that bring up real
+backends and a real proxy over localhost, covering active-probe recovery,
+exact-path routing with a query string, upstream `Set-Cookie` forwarding and
+the rule that a request is never retried once its body has been sent.
 
 ## Engineering boundaries
 
