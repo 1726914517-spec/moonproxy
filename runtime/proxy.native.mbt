@@ -2,14 +2,17 @@
 // The native proxy runtime: an L7 reverse proxy. For each accepted request it
 // selects a route by host/path, chooses a backend through the pool's balancer,
 // translates and forwards the request, streams the response back, and fails
-// over to a healthy peer when safe. This file is native-only — real sockets
-// come from `moonbitlang/async`'s native FFI.
+// over to a healthy peer when safe. Edge governance (per-client rate limiting,
+// request body size) and structured access logging wrap the forwarding path.
+// This file is native-only — real sockets come from `moonbitlang/async`.
 
 ///|
-/// The outcome of one attempt to reach a backend.
+/// The outcome of one attempt to reach a backend. `Delivered` carries the
+/// upstream status code; the other variants describe a failure and whether it
+/// is safe to retry.
 priv enum Forward {
   /// The response was (or is being) streamed to the client.
-  Delivered
+  Delivered(Int32)
   /// The connection could not be established or the request headers sent; safe
   /// to try another backend.
   ConnectFailed
@@ -21,21 +24,30 @@ priv enum Forward {
 
 ///|
 /// A running proxy over a static configuration, holding one balancer per pool
-/// (so each pool's round-robin/weighted state persists) and the health policy.
+/// (so each pool's round-robin/weighted state persists), the health policy, an
+/// optional per-client rate limiter and the access log sink.
 pub struct Runtime {
   config : @moonproxy.ProxyConfig
   balancers : Map[String, @moonproxy.Balancer]
   health : @moonproxy.HealthPolicy
+  limiter : @moonproxy.RateLimiter?
+  sink : LogSink
 }
 
 ///|
-/// Build a runtime; the health policy defaults to a threshold of 2.
+/// Build a runtime; the health policy defaults to a threshold of 2 and the
+/// access log sink to JSON lines on stdout.
 pub fn Runtime::new(
   config : @moonproxy.ProxyConfig,
   health~ : @moonproxy.HealthPolicy = @moonproxy.HealthPolicy::new(),
+  sink~ : LogSink = LogSink::Stdout,
 ) -> Runtime {
   let balancers : Map[String, @moonproxy.Balancer] = Map([])
-  { config, balancers, health, }
+  let limiter = match config.governance().rate_limit() {
+    Some(rule) => Some(@moonproxy.RateLimiter::new(rule))
+    None => None
+  }
+  { config, balancers, health, limiter, sink, }
 }
 
 ///|
@@ -63,7 +75,7 @@ pub async fn Runtime::serve(self : Runtime) -> Unit {
   let rt = self
   server.run_forever(
     (req, body, conn) => {
-      rt.handle(req, body, conn) catch {
+      rt.process(req, body, conn) catch {
         _ => {
           conn.send_response(502, "Bad Gateway") catch {
             _ => ()
@@ -79,12 +91,87 @@ pub async fn Runtime::serve(self : Runtime) -> Unit {
 }
 
 ///|
-async fn Runtime::handle(
+/// One request through the governance wrapper: rate limit, body size limit,
+/// then the forwarding path, with a structured access record written in every
+/// case (including rejections and errors).
+async fn Runtime::process(
   self : Runtime,
   req : @http.Request,
   body : &@io.Reader,
   conn : @http.ServerConnection,
 ) -> Unit {
+  let start = @async.now()
+  let client_ip = ip_of(conn.client_addr())
+  let meth = method_to_string(req.meth)
+  let incoming = headers_to_pairs(req.headers)
+
+  // Per-client rate limiting: answer 429 before touching any backend.
+  match self.limiter {
+    Some(limiter) => {
+      let now_ms = @async.now().to_int()
+      if !limiter.allow(client_ip, now_ms) {
+        let headers = Map([(@http.CaseInsensitiveString("retry-after"), "1")])
+        conn.send_response(429, "Too Many Requests", extra_headers=headers)
+        conn.end_response()
+        self.log(client_ip, meth, req.path, 429, start)
+        return
+      }
+    }
+    None => ()
+  }
+
+  // Request body size limit: reject an oversized declared body before
+  // forwarding (413).
+  let max_body = self.config.governance().max_body_bytes()
+  if @moonproxy.body_too_large(incoming, max_body) {
+    conn.send_response(413, "Payload Too Large")
+    conn.end_response()
+    self.log(client_ip, meth, req.path, 413, start)
+    return
+  }
+
+  let status = self.handle(req, body, conn, incoming, client_ip)
+  self.log(client_ip, meth, req.path, status, start)
+}
+
+///|
+/// Build and emit one access record.
+fn Runtime::log(
+  self : Runtime,
+  client_ip : String,
+  meth : String,
+  path : String,
+  status : Int32,
+  start : Int64,
+) -> Unit {
+  let now = @async.now()
+  let entry = AccessLogEntry::new(
+    timestamp_ms=now,
+    client_ip~,
+    http_method=meth,
+    path~,
+    status~,
+    latency_ms=now - start,
+  )
+  self.sink.emit(entry)
+}
+
+///|
+/// The access records captured when this runtime uses a memory sink; empty for
+/// the stdout sink.
+pub fn Runtime::access_entries(self : Runtime) -> Array[AccessLogEntry] {
+  self.sink.entries()
+}
+
+///|
+async fn Runtime::handle(
+  self : Runtime,
+  req : @http.Request,
+  body : &@io.Reader,
+  conn : @http.ServerConnection,
+  incoming : Array[(String, String)],
+  client_ip : String,
+) -> Int32 {
   let original_host = match header_value(req.headers, "host") {
     Some(h) => h
     None => ""
@@ -97,15 +184,20 @@ async fn Runtime::handle(
     None => {
       conn.send_response(404, "Not Found")
       conn.end_response()
+      404
     }
-    Some(route) => self.proxy_to_route(route, req, body, conn, original_host)
+    Some(route) =>
+      self.proxy_to_route(
+        route, req, body, conn, incoming, client_ip, original_host,
+      )
   }
 }
 
 ///|
-async fn send_bad_gateway(conn : @http.ServerConnection) -> Unit {
+async fn send_bad_gateway(conn : @http.ServerConnection) -> Int32 {
   conn.send_response(502, "Bad Gateway")
   conn.end_response()
+  502
 }
 
 ///|
@@ -115,21 +207,22 @@ async fn Runtime::proxy_to_route(
   req : @http.Request,
   body : &@io.Reader,
   conn : @http.ServerConnection,
+  incoming : Array[(String, String)],
+  client_ip : String,
   original_host : String,
-) -> Unit {
+) -> Int32 {
   let pool = route.pool()
   let backends = pool.backends()
   let bal = self.balancer_for(pool)
-  let client_ip = ip_of(conn.client_addr())
   let meth = method_to_string(req.meth)
   let opts = route.options()
-  let incoming = headers_to_pairs(req.headers)
   let tried : Array[Int32] = []
   let mut done = false
+  let mut final_status = 502
   while !done {
     match @moonproxy.pick(bal, backends, client_key=client_ip, exclude=tried) {
       None => {
-        send_bad_gateway(conn)
+        final_status = send_bad_gateway(conn)
         done = true
       }
       Some(idx) => {
@@ -149,29 +242,30 @@ async fn Runtime::proxy_to_route(
         )
         @moonproxy.release(backends, idx)
         match outcome {
-          Delivered => {
+          Delivered(code) => {
             @moonproxy.record_success(backends, idx, self.health)
             @moonproxy.count_success(backends, idx)
+            final_status = code
             done = true
           }
           ConnectFailed => {
             @moonproxy.record_failure(backends, idx, self.health)
             @moonproxy.count_failure(backends, idx)
             if !opts.failover {
-              send_bad_gateway(conn)
+              final_status = send_bad_gateway(conn)
               done = true
             }
           }
           BodyFailed => {
             @moonproxy.count_failure(backends, idx)
-            send_bad_gateway(conn)
+            final_status = send_bad_gateway(conn)
             done = true
           }
           RetryableStatus => {
             @moonproxy.record_failure(backends, idx, self.health)
             @moonproxy.count_failure(backends, idx)
             if !opts.failover {
-              send_bad_gateway(conn)
+              final_status = send_bad_gateway(conn)
               done = true
             }
           }
@@ -179,6 +273,7 @@ async fn Runtime::proxy_to_route(
       }
     }
   }
+  final_status
 }
 
 ///|
@@ -269,5 +364,5 @@ async fn forward_one(
   )
   conn.write_reader(client)
   conn.end_response()
-  Delivered
+  Delivered(resp.code)
 }

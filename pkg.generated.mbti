@@ -4,7 +4,11 @@ package "1726914517-spec/moonproxy"
 // Values
 pub fn acquire(Array[Backend], Int32) -> Unit
 
+pub fn body_too_large(Array[(String, String)], UInt64) -> Bool
+
 pub fn can_retry_status(String, Int32) -> Bool
+
+pub fn content_length(Array[(String, String)]) -> UInt64?
 
 pub fn count_failure(Array[Backend], Int32) -> Unit
 
@@ -117,6 +121,15 @@ pub struct Balancer {
 }
 pub fn Balancer::new(policy? : LBPolicy) -> Self
 
+pub struct Governance {
+  rate_limit : RateLimitRule?
+  max_body_bytes : UInt64
+}
+pub fn Governance::max_body_bytes(Self) -> UInt64
+pub fn Governance::new(rate_limit? : RateLimitRule?, max_body_bytes? : UInt64) -> Self
+pub fn Governance::off() -> Self
+pub fn Governance::rate_limit(Self) -> RateLimitRule?
+
 pub struct HealthPolicy {
   unhealthy_threshold : Int32
   healthy_threshold : Int32
@@ -151,13 +164,35 @@ pub struct ProxyConfig {
   listen_host : String
   listen_port : Int32
   routes : Array[Route]
+  governance : Governance
 }
 pub fn ProxyConfig::add_route(Self, Route) -> Self
 pub fn ProxyConfig::bind(Self) -> String
+pub fn ProxyConfig::governance(Self) -> Governance
 pub fn ProxyConfig::listen_host(Self) -> String
 pub fn ProxyConfig::listen_port(Self) -> Int32
-pub fn ProxyConfig::new(host? : String, port? : Int32) -> Self
+pub fn ProxyConfig::new(host? : String, port? : Int32, governance? : Governance) -> Self
 pub fn ProxyConfig::routes(Self) -> Array[Route]
+
+pub struct RateLimitRule {
+  capacity : Int32
+  refill_per_sec : Int32
+}
+pub fn RateLimitRule::capacity(Self) -> Int32
+pub fn RateLimitRule::new(capacity? : Int32, refill_per_sec? : Int32) -> Self
+pub fn RateLimitRule::refill_per_sec(Self) -> Int32
+
+pub struct RateLimiter {
+  rule : RateLimitRule
+  buckets : Map[String, TokenBucket]
+  mut allowed : Int32
+  mut rejected : Int32
+}
+pub fn RateLimiter::allow(Self, String, Int32) -> Bool
+pub fn RateLimiter::allowed_count(Self) -> Int32
+pub fn RateLimiter::new(RateLimitRule) -> Self
+pub fn RateLimiter::rejected_count(Self) -> Int32
+pub fn RateLimiter::tokens_for(Self, String, Int32) -> Int32
 
 pub struct Route {
   id : String
@@ -185,6 +220,11 @@ pub(all) enum Scheme {
   Https
 }
 pub fn Scheme::default_port(Self) -> Int32
+
+pub struct TokenBucket {
+  mut tokens : Int32
+  mut last_ms : Int32
+}
 
 // Type aliases
 

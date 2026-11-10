@@ -4,7 +4,10 @@ A native L7 **reverse proxy / load balancer runtime** for [MoonBit] — the
 category of nginx, HAProxy and Traefik. It terminates client HTTP/1.1
 connections, matches each request to a route, picks a backend through a pool's
 balancer, and forwards both directions while cleaning connection-level headers
-and failing over when a backend is down.
+and failing over when a backend is down. On top of forwarding it applies edge
+governance — per-client rate limiting, request body size limits and structured
+access logging — so traffic is protected and observable before it reaches
+upstream.
 
 The forwarding decision logic (routing, balancing, header policy, health and
 retry) lives in a portable core that compiles to `wasm`, `wasm-gc`, `js` and
@@ -32,6 +35,15 @@ retry) lives in a portable core that compiles to `wasm`, `wasm-gc`, `js` and
   methods; a failure after the request body started is never replayed.
 - **Streaming** — request and response bodies are piped through readers, so
   responses are not buffered wholesale.
+- **Per-client rate limiting** — a token bucket per client IP (burst capacity
+  plus a steady refill) rejects excess requests with `429 Too Many Requests`
+  and a `Retry-After` header before any backend is touched.
+- **Request body size limit** — an oversized declared `Content-Length` is
+  rejected with `413 Payload Too Large` at the edge, so the bytes never travel
+  upstream.
+- **Structured access logs** — one JSON record per request (timestamp, client,
+  method, path, status, latency) goes to an injectable sink: JSON lines on
+  stdout by default, or an in-memory sink for tests and embedding.
 
 ## Ecosystem position
 
@@ -86,11 +98,26 @@ There is no config file parser yet — a proxy is built with the core API:
 let web = BackendPool::new("web", policy=WeightedRR)
   .add(Backend::new("10.0.0.1", 8080, weight=2))
   .add(Backend::new("10.0.0.2", 8080, weight=1))
-let config = ProxyConfig::new(host="0.0.0.0", port=80)
+// Edge governance: a burst of 20 requests refilling at 10/s, bodies capped at 1 MiB.
+let rule = RateLimitRule::new(capacity=20, refill_per_sec=10)
+let governance = Governance::new(rate_limit=Some(rule), max_body_bytes=1048576)
+let config = ProxyConfig::new(host="0.0.0.0", port=80, governance)
   .add_route(Route::prefix("root", "/", web))
+// Default sink writes JSON lines; pass LogSink::memory() to capture records.
 let runtime = @runtime.Runtime::new(config)
 g.spawn_bg(() => runtime.run_probes(interval_ms=1000)) // active health
 runtime.serve()
+```
+
+With the memory sink, the records are available in-process instead of being
+printed:
+
+```moonbit
+let runtime = @runtime.Runtime::new(config, sink=LogSink::memory())
+// ... after requests ...
+for entry in runtime.access_entries() {
+  // entry.http_method(), entry.path(), entry.status(), entry.latency_ms(), ...
+}
 ```
 
 ## Build and test
@@ -102,10 +129,13 @@ moon build --target all
 moon test  --target all
 ```
 
-The portable core has 34 black-box tests that run on all four targets; the
-native runtime additionally has two end-to-end tests that bring up real
-backends and a real proxy over localhost, including active-probe recovery of a
-backend that comes back online.
+The portable core has 49 black-box tests that run on all four targets; the
+native runtime additionally has seven end-to-end tests that bring up real
+backends and a real proxy over localhost. They cover weighted balancing and
+failover, active-probe recovery of a backend that comes back online, the
+retry/cookie/query semantics, and the governance path: a burst that earns
+`429` (then refills), an oversized body rejected with `413` before it reaches
+the backend, and the access records captured through the memory sink.
 
 ## Engineering boundaries
 
@@ -115,9 +145,16 @@ Being explicit about what this release does not do:
   (`$proxy_host`). The original host is carried in `X-Forwarded-Host`.
 - The active probe is a TCP-connect check on a fixed interval; it does not yet
   send an HTTP health path or honor custom probe timeouts.
-- The edge speaks HTTP/1.1; HTTP/2 and TLS termination are not in this release.
+- The edge speaks HTTP/1.1; HTTP/2 and TLS termination are not in this
+  release. The async HTTP layer exposes no server-side TLS in its public API,
+  so HTTPS termination cannot be built without reimplementing HTTP framing.
+- Rate limiting is global and keyed by client IP across all routes; per-route
+  rules are not configurable yet.
+- The body size guard acts on the declared `Content-Length`. A chunked request
+  without a length cannot be sized up front and is not preemptively rejected.
 - The decision core is portable, but the socket runtime (including the probe
-  dial loop) is native-only, since it relies on async's native socket FFI.
+  dial loop and the access log sinks) is native-only, since it relies on
+  async's native socket FFI.
 
 ## License
 

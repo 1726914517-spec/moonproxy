@@ -16,7 +16,13 @@ fn demo_config() -> @lib.ProxyConfig {
   let api = @lib.BackendPool::new("api", policy=@lib.RoundRobin)
     .add(@lib.Backend::new("127.0.0.1", 19001))
     .add(@lib.Backend::new("127.0.0.1", 19999)) // nothing listens here
-  @lib.ProxyConfig::new(host="127.0.0.1", port=18080)
+  // Edge governance: a burst of 5 refilling at 2/s, request bodies capped at 1 KiB.
+  let rule = @lib.RateLimitRule::new(capacity=5, refill_per_sec=2)
+  let governance = @lib.Governance::new(
+    rate_limit=Some(rule),
+    max_body_bytes=1024,
+  )
+  @lib.ProxyConfig::new(host="127.0.0.1", port=18080, governance~)
   .add_route(@lib.Route::prefix("api", "/api", api))
   .add_route(@lib.Route::prefix("root", "/", web))
 }
@@ -57,10 +63,16 @@ fn print_banner() -> Unit {
   println("  proxy   : http://127.0.0.1:18080")
   println("  backends: 127.0.0.1:19001/19002/19003")
   println("  active health probes run every 1s")
+  println("  each request prints a JSON access log line on stdout")
   println("try:")
   println("  curl -s http://127.0.0.1:18080/")
   println("  curl -s http://127.0.0.1:18080/api/users")
   println("  curl -s -X POST http://127.0.0.1:18080/ -d 'hello'")
+  println("governance:")
+  println("  fire 6 rapid requests to see 429 (burst capacity is 5)")
+  println(
+    "  curl -s -X POST http://127.0.0.1:18080/ --data-binary @big.file  # 413 if > 1 KiB",
+  )
   println("press Ctrl+C to stop")
 }
 

@@ -273,12 +273,49 @@ pub fn Route::options(self : Route) -> RouteOptions {
 }
 
 ///|
+/// Edge governance policies applied to every request: an optional per-client
+/// rate-limit rule and a maximum request body size (0 means unlimited).
+pub struct Governance {
+  rate_limit : RateLimitRule?
+  max_body_bytes : UInt64
+}
+
+///|
+/// Governance with every protection switched off (the default).
+pub fn Governance::off() -> Governance {
+  { rate_limit: None, max_body_bytes: 0, }
+}
+
+///|
+/// Build governance from explicit policies; omitted arguments leave that
+/// protection off.
+pub fn Governance::new(
+  rate_limit~ : RateLimitRule? = None,
+  max_body_bytes~ : UInt64 = 0,
+) -> Governance {
+  { rate_limit, max_body_bytes, }
+}
+
+///|
+/// The configured rate-limit rule, if any.
+pub fn Governance::rate_limit(self : Governance) -> RateLimitRule? {
+  self.rate_limit
+}
+
+///|
+/// The maximum accepted request body in bytes (0 means unlimited).
+pub fn Governance::max_body_bytes(self : Governance) -> UInt64 {
+  self.max_body_bytes
+}
+
+///|
 /// The top-level proxy configuration: where to listen and the ordered route
 /// table. Routes are matched by specificity, not array order.
 pub struct ProxyConfig {
   listen_host : String
   listen_port : Int32
   routes : Array[Route]
+  governance : Governance
 }
 
 ///|
@@ -286,8 +323,9 @@ pub struct ProxyConfig {
 pub fn ProxyConfig::new(
   host~ : String = "127.0.0.1",
   port~ : Int32 = 8080,
+  governance~ : Governance = Governance::off(),
 ) -> ProxyConfig {
-  { listen_host: host, listen_port: port, routes: [], }
+  { listen_host: host, listen_port: port, routes: [], governance, }
 }
 
 ///|
@@ -320,4 +358,10 @@ pub fn ProxyConfig::listen_port(self : ProxyConfig) -> Int32 {
 /// The route table.
 pub fn ProxyConfig::routes(self : ProxyConfig) -> Array[Route] {
   self.routes
+}
+
+///|
+/// The edge governance policies (rate limit, body size).
+pub fn ProxyConfig::governance(self : ProxyConfig) -> Governance {
+  self.governance
 }
