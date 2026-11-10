@@ -159,3 +159,28 @@ pub fn forward_response_headers(
   }
   out
 }
+
+///|
+/// Whether an incoming request carries a body that must be streamed: a
+/// `Content-Length` greater than zero, or a chunked `Transfer-Encoding`. Once
+/// such a body has been sent, the consumed reader cannot be replayed on another
+/// backend, so a status-based retry is unsafe even for an idempotent method.
+pub fn request_has_body(headers : Array[(String, String)]) -> Bool {
+  let mut has_body = false
+  for (k, v) in headers {
+    match k.to_lower() {
+      "content-length" => {
+        let len = @string.parse_uint64(v, base=10) catch { _ => 0 }
+        if len > 0 {
+          has_body = true
+        }
+      }
+      "transfer-encoding" =>
+        if v.to_lower().contains("chunked") {
+          has_body = true
+        }
+      _ => ()
+    }
+  }
+  has_body
+}

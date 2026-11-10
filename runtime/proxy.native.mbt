@@ -90,7 +90,10 @@ async fn Runtime::handle(
     None => ""
   }
   let host = @moonproxy.normalize_host(original_host)
-  match @moonproxy.select_route(self.config.routes(), host, req.path) {
+  // Route on the path alone; the query string is not part of path matching, but
+  // the full target (req.path) is still forwarded to the backend.
+  let route_path = @moonproxy.path_only(req.path)
+  match @moonproxy.select_route(self.config.routes(), host, route_path) {
     None => {
       conn.send_response(404, "Not Found")
       conn.end_response()
@@ -196,6 +199,10 @@ async fn forward_one(
   let req_headers = @moonproxy.forward_request_headers(
     incoming, client_ip, "http", original_host, upstream_host, opts,
   )
+  // Whether the request carries a body that will be streamed and consumed. After
+  // it is sent, the reader cannot be rewound, so retrying on another backend
+  // would replay an empty body.
+  let has_body = @moonproxy.request_has_body(incoming)
 
   // Phase A: dial and send the request line + headers. The async client always
   // emits its own `Host` (the dialed upstream address) and a `User-Agent`; we
@@ -241,19 +248,24 @@ async fn forward_one(
     }
   }
 
-  // A retryable status from an idempotent method: let the loop try a peer.
-  if opts.failover && @moonproxy.can_retry_status(meth, resp.code) {
+  // A retryable status from an idempotent method is safe only when no body was
+  // streamed. With a body the reader is already consumed, so pass the upstream
+  // status through rather than replay an empty request on another backend.
+  if opts.failover && !has_body && @moonproxy.can_retry_status(meth, resp.code) {
     client.close()
     return RetryableStatus
   }
 
-  // Final answer: translate the response headers and stream the body back.
+  // Final answer: translate the response headers, forward upstream cookies and
+  // stream the body back. Set-Cookie is delivered through the dedicated cookie
+  // channel (the parser keeps it out of the header map).
   let resp_pairs = headers_to_pairs(resp.headers)
   let out_headers = @moonproxy.forward_response_headers(resp_pairs)
   conn.send_response(
     resp.code,
     resp.reason,
     extra_headers=to_ci_map(out_headers),
+    cookies=resp.cookies,
   )
   conn.write_reader(client)
   conn.end_response()

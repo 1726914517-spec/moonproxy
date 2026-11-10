@@ -66,3 +66,13 @@ test "select route returns a match or none" {
   let only_api = [@moonproxy.Route::prefix("api", "/api", pool())]
   assert_eq(@moonproxy.select_route(only_api, "any.com", "/web") is None, true)
 }
+
+///|
+test "path only drops the query but keeps the path" {
+  assert_eq(@moonproxy.path_only("/users?id=1"), "/users")
+  assert_eq(@moonproxy.path_only("/users"), "/users")
+  assert_eq(@moonproxy.path_only("/a/b?x=1&y=2"), "/a/b")
+  assert_eq(@moonproxy.path_only("/search?q="), "/search")
+  assert_eq(@moonproxy.path_only("/"), "/")
+  assert_eq(@moonproxy.path_only("/health?token=abc#frag"), "/health")
+}

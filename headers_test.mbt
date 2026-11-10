@@ -97,3 +97,25 @@ test "response: strips framing but passes content through" {
   assert_eq(get(out, "content-type"), Some("text/plain"))
   assert_eq(get(out, "set-cookie"), Some("sid=abc"))
 }
+
+///|
+test "request has body detects content length and chunked encoding" {
+  assert_eq(
+    @moonproxy.request_has_body([("content-length", "12"), ("host", "h")]),
+    true,
+  )
+  assert_eq(@moonproxy.request_has_body([("content-length", "0")]), false)
+  assert_eq(
+    @moonproxy.request_has_body([("transfer-encoding", "chunked")]),
+    true,
+  )
+  assert_eq(
+    @moonproxy.request_has_body([("Transfer-Encoding", "Chunked")]),
+    true,
+  )
+  assert_eq(@moonproxy.request_has_body([("host", "h")]), false)
+  assert_eq(
+    @moonproxy.request_has_body([("content-length", "not-a-number")]),
+    false,
+  )
+}

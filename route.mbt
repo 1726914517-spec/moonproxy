@@ -17,6 +17,17 @@ pub fn normalize_host(host : String) -> String {
 }
 
 ///|
+/// Return the path component of a request target, dropping any query string
+/// (everything from the first `?`). Routing compares the path only; the full
+/// target is still forwarded upstream, so query parameters reach the backend.
+pub fn path_only(target : String) -> String {
+  match target.find("?") {
+    Some(q) => target[0:q].to_owned()
+    None => target
+  }
+}
+
+///|
 /// Whether a host matcher accepts the (already normalized, lowercase) host.
 pub fn host_matches(matcher : HostMatch, host : String) -> Bool {
   match matcher {

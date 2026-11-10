@@ -117,3 +117,174 @@ async test "runtime: balances over backends, forwards XFF and fails over" {
     t3.cancel()
   })
 }
+
+///|
+// A backend that echoes the received request target in a header.
+async fn echo_path_backend(port : Int32) -> Unit {
+  let addr = @socket.Addr::parse("127.0.0.1:" + port.to_string())
+  let server = @http.Server(addr, reuse_addr=true)
+  server.run_forever(
+    (req, _body, conn) => {
+      let extra = Map([(@http.CaseInsensitiveString("x-seen-path"), req.path)])
+      conn.send_response(200, "OK", extra_headers=extra)
+      conn.write_string("ok")
+      conn.end_response()
+    },
+    allow_failure=true,
+  )
+}
+
+///|
+fn exact_route_config() -> @moonproxy.ProxyConfig {
+  let pool = @moonproxy.BackendPool::new("exact").add(
+    @moonproxy.Backend::new("127.0.0.1", 18801),
+  )
+  @moonproxy.ProxyConfig::new(host="127.0.0.1", port=18880).add_route(
+    @moonproxy.Route::exact("users", "/users", pool),
+  )
+}
+
+///|
+async test "runtime: exact route matches when a query string is present" {
+  @async.with_task_group(g => {
+    let tbackend = g.spawn(() => echo_path_backend(18801))
+    let runtime = @runtime.Runtime::new(exact_route_config())
+    let tproxy = g.spawn(() => runtime.serve())
+    @async.sleep(400)
+
+    // The query string must not break exact matching, and the full target is
+    // still forwarded so the backend sees the query.
+    let (resp, _body) = @http.get("http://127.0.0.1:18880/users?id=1")
+    assert_eq(resp.code, 200)
+    assert_eq(resp.headers.get("x-seen-path"), Some("/users?id=1"))
+
+    // The exact path itself still matches.
+    let (plain, _pb) = @http.get("http://127.0.0.1:18880/users")
+    assert_eq(plain.code, 200)
+
+    // An unrelated path still 404s.
+    let (other, _ob) = @http.get("http://127.0.0.1:18880/other")
+    assert_eq(other.code, 404)
+
+    tbackend.cancel()
+    tproxy.cancel()
+  })
+}
+
+///|
+// A backend that sets two cookies on every response.
+async fn cookie_backend(port : Int32) -> Unit {
+  let addr = @socket.Addr::parse("127.0.0.1:" + port.to_string())
+  let server = @http.Server(addr, reuse_addr=true)
+  server.run_forever(
+    (_req, _body, conn) => {
+      let cookies = [@http.Cookie("sid", "abc"), @http.Cookie("track", "xyz")]
+      conn.send_response(200, "OK", cookies~)
+      conn.write_string("ok")
+      conn.end_response()
+    },
+    allow_failure=true,
+  )
+}
+
+///|
+fn cookie_config() -> @moonproxy.ProxyConfig {
+  let pool = @moonproxy.BackendPool::new("cookies").add(
+    @moonproxy.Backend::new("127.0.0.1", 18802),
+  )
+  @moonproxy.ProxyConfig::new(host="127.0.0.1", port=18881).add_route(
+    @moonproxy.Route::prefix("root", "/", pool),
+  )
+}
+
+///|
+async test "runtime: forwards upstream Set-Cookie headers" {
+  @async.with_task_group(g => {
+    let tbackend = g.spawn(() => cookie_backend(18802))
+    let runtime = @runtime.Runtime::new(cookie_config())
+    let tproxy = g.spawn(() => runtime.serve())
+    @async.sleep(400)
+
+    let (resp, _body) = @http.get("http://127.0.0.1:18881/")
+    assert_eq(resp.code, 200)
+    assert_eq(resp.cookies.length(), 2)
+    let names : Array[String] = []
+    for c in resp.cookies {
+      names.push(c.name)
+    }
+    assert_eq(names.contains("sid"), true)
+    assert_eq(names.contains("track"), true)
+
+    tbackend.cancel()
+    tproxy.cancel()
+  })
+}
+
+///|
+// A PUT backend that drains the body, records "name:body-length" in the shared
+// log and answers 500 when `fail`, 200 otherwise.
+async fn put_backend(
+  port : Int32,
+  name : String,
+  fail : Bool,
+  log : Array[String],
+) -> Unit {
+  let addr = @socket.Addr::parse("127.0.0.1:" + port.to_string())
+  let server = @http.Server(addr, reuse_addr=true)
+  server.run_forever(
+    (req, body, conn) => {
+      if req.meth == @http.Put {
+        let payload = body.read_all()
+        log.push(name + ":" + payload.binary().length().to_string())
+        if fail {
+          conn.send_response(500, "Internal Server Error")
+          conn.end_response()
+        } else {
+          conn.send_response(200, "OK")
+          conn.write_string("ok")
+          conn.end_response()
+        }
+      } else {
+        conn.send_response(200, "OK")
+        conn.end_response()
+      }
+    },
+    allow_failure=true,
+  )
+}
+
+///|
+fn put_retry_config() -> @moonproxy.ProxyConfig {
+  let pool = @moonproxy.BackendPool::new("put")
+    .add(@moonproxy.Backend::new("127.0.0.1", 18803))
+    .add(@moonproxy.Backend::new("127.0.0.1", 18804))
+  @moonproxy.ProxyConfig::new(host="127.0.0.1", port=18882).add_route(
+    @moonproxy.Route::prefix("root", "/", pool),
+  )
+}
+
+///|
+async test "runtime: does not retry after the request body was sent" {
+  @async.with_task_group(g => {
+    let log : Array[String] = []
+    // The first backend (index 0, round-robin) fails with 500; the peer would
+    // answer 200. Both share the contact log.
+    let tfail = g.spawn(() => put_backend(18803, "A", true, log))
+    let tok = g.spawn(() => put_backend(18804, "B", false, log))
+    let runtime = @runtime.Runtime::new(put_retry_config())
+    let tproxy = g.spawn(() => runtime.serve())
+    @async.sleep(400)
+
+    let content = b"payload-data"
+    let (resp, _body) = @http.put("http://127.0.0.1:18882/resource", content)
+    // The upstream 500 is passed through, not hidden behind a retried success.
+    assert_eq(resp.code, 500)
+    // Exactly one backend was contacted: the failing one, with the full body.
+    assert_eq(log.length(), 1)
+    assert_eq(log[0], "A:" + content.length().to_string())
+
+    tfail.cancel()
+    tok.cancel()
+    tproxy.cancel()
+  })
+}

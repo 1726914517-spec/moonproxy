@@ -34,6 +34,8 @@ pub fn normalize_host(String) -> String
 
 pub fn path_matches(PathMatch, String) -> Bool
 
+pub fn path_only(String) -> String
+
 pub fn pick(Balancer, Array[Backend], client_key? : String, rand? : (Int32) -> Int32, exclude? : Array[Int32]) -> Int32?
 
 pub fn record_failure(Array[Backend], Int32, HealthPolicy) -> Unit
@@ -43,6 +45,8 @@ pub fn record_probe(Array[Backend], Int32, Bool, HealthPolicy, Int32) -> Unit
 pub fn record_success(Array[Backend], Int32, HealthPolicy) -> Unit
 
 pub fn release(Array[Backend], Int32) -> Unit
+
+pub fn request_has_body(Array[(String, String)]) -> Bool
 
 pub fn route_matches(Route, String, String) -> Bool
 
