@@ -83,7 +83,16 @@ curl -s http://127.0.0.1:18080/api/users
 
 # a request body is forwarded
 curl -s -X POST http://127.0.0.1:18080/ -d 'hello'
+
+# push past the burst capacity (5) to see the edge answer 429
+for i in $(seq 1 8); do curl -s -o /dev/null -w '%{http_code} ' http://127.0.0.1:18080/; done
+
+# a body over the 1 KiB cap is rejected with 413 before reaching the backend
+python -c "open('big.file','wb').write(b'x'*2048)"
+curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:18080/ --data-binary @big.file
 ```
+
+Every request also prints one JSON access line on the demo's stdout.
 
 The `/api` pool deliberately includes a closed port; requests still succeed
 because the proxy fails over to the live backend. The demo also spawns an active
@@ -150,6 +159,10 @@ Being explicit about what this release does not do:
   so HTTPS termination cannot be built without reimplementing HTTP framing.
 - Rate limiting is global and keyed by client IP across all routes; per-route
   rules are not configurable yet.
+- Rate-limit buckets are kept per client IP and are never evicted, so a very
+  large number of distinct source addresses grows the map without bound. A
+  production edge would add an LRU or an idle-expiry sweep; this release does
+  not.
 - The body size guard acts on the declared `Content-Length`. A chunked request
   without a length cannot be sized up front and is not preemptively rejected.
 - The decision core is portable, but the socket runtime (including the probe

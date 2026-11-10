@@ -108,7 +108,7 @@ async fn Runtime::process(
   // Per-client rate limiting: answer 429 before touching any backend.
   match self.limiter {
     Some(limiter) => {
-      let now_ms = @async.now().to_int()
+      let now_ms = @async.now()
       if !limiter.allow(client_ip, now_ms) {
         let headers = Map([(@http.CaseInsensitiveString("retry-after"), "1")])
         conn.send_response(429, "Too Many Requests", extra_headers=headers)
@@ -362,7 +362,14 @@ async fn forward_one(
     extra_headers=to_ci_map(out_headers),
     cookies=resp.cookies,
   )
-  conn.write_reader(client)
-  conn.end_response()
+  // The status line is already on the wire: a failure while streaming the body
+  // (client disconnect, upstream reset) must not bubble up to the server-level
+  // handler, which would try to send a second 502 response.
+  conn.write_reader(client) catch {
+    _ => ()
+  }
+  conn.end_response() catch {
+    _ => ()
+  }
   Delivered(resp.code)
 }

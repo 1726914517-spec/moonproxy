@@ -51,7 +51,9 @@ pub fn RateLimitRule::refill_per_sec(self : RateLimitRule) -> Int32 {
 /// carried forward so refill is not rounded away.
 pub struct TokenBucket {
   mut tokens : Int32
-  mut last_ms : Int32
+  // Milliseconds since the epoch are ~1.8e12 today, which does not fit in a
+  // 32-bit integer, so the clock is kept as Int64 all the way through.
+  mut last_ms : Int64
 }
 
 ///|
@@ -72,23 +74,28 @@ pub fn RateLimiter::new(rule : RateLimitRule) -> RateLimiter {
 ///|
 /// Reconcile a bucket with the clock: add the tokens accrued since the last
 /// reconciliation (capped at capacity), carrying any unused milliseconds.
-fn refill(bucket : TokenBucket, rule : RateLimitRule, now_ms : Int32) -> Unit {
+fn refill(bucket : TokenBucket, rule : RateLimitRule, now_ms : Int64) -> Unit {
   let elapsed = now_ms - bucket.last_ms
   if elapsed <= 0 {
     return
   }
-  let added = elapsed * rule.refill_per_sec / 1000
+  // Compute the accrued tokens in Int64: an idle client can leave a gap of many
+  // days, and `elapsed * refill_per_sec` overflows a 32-bit integer long before
+  // that. Overflowing to a negative value here used to freeze the bucket at zero
+  // tokens forever, so the client stayed rejected.
+  let added = elapsed * rule.refill_per_sec.to_int64() / 1000
   if added <= 0 {
     return
   }
-  if bucket.tokens + added >= rule.capacity {
+  if added >= (rule.capacity - bucket.tokens).to_int64() {
     bucket.tokens = rule.capacity
     // Once full, reset the window so a later drain starts fresh from now.
     bucket.last_ms = now_ms
   } else {
-    bucket.tokens = bucket.tokens + added
+    bucket.tokens = bucket.tokens + added.to_int()
     // Advance only by the time the added tokens represent; keep the remainder.
-    bucket.last_ms = bucket.last_ms + added * 1000 / rule.refill_per_sec
+    bucket.last_ms = bucket.last_ms +
+      added * 1000 / rule.refill_per_sec.to_int64()
   }
 }
 
@@ -98,7 +105,7 @@ fn refill(bucket : TokenBucket, rule : RateLimitRule, now_ms : Int32) -> Unit {
 pub fn RateLimiter::allow(
   self : RateLimiter,
   key : String,
-  now_ms : Int32,
+  now_ms : Int64,
 ) -> Bool {
   let bucket = match self.buckets.get(key) {
     Some(b) => b
@@ -135,7 +142,7 @@ pub fn RateLimiter::rejected_count(self : RateLimiter) -> Int32 {
 pub fn RateLimiter::tokens_for(
   self : RateLimiter,
   key : String,
-  now_ms : Int32,
+  now_ms : Int64,
 ) -> Int32 {
   match self.buckets.get(key) {
     None => 0

@@ -20,6 +20,11 @@ pub fn content_length(headers : Array[(String, String)]) -> UInt64? {
 ///|
 /// Whether a request exceeds the configured maximum body size. A limit of 0
 /// means unlimited; a request without a declared length is never rejected here.
+///
+/// When a limit is active, conflicting or unparseable `Content-Length` values
+/// are rejected rather than allowed through: two different lengths on one
+/// request are the classic request-smuggling shape, and a value that cannot be
+/// parsed cannot be proved to be within the limit.
 pub fn body_too_large(
   headers : Array[(String, String)],
   max_bytes : UInt64,
@@ -27,7 +32,17 @@ pub fn body_too_large(
   if max_bytes == 0 {
     return false
   }
-  match content_length(headers) {
+  let mut declared : UInt64? = None
+  for (k, v) in headers {
+    if k.to_lower() == "content-length" {
+      let len = @string.parse_uint64(v, base=10) catch { _ => return true }
+      match declared {
+        None => declared = Some(len)
+        Some(prev) => if prev != len { return true }
+      }
+    }
+  }
+  match declared {
     Some(len) => len > max_bytes
     None => false
   }

@@ -37,6 +37,27 @@ test "request without declared length is never rejected" {
 }
 
 ///|
+test "conflicting content lengths are rejected" {
+  // Two different lengths on one request must not slip past the guard.
+  let headers = [("content-length", "4"), ("Content-Length", "14")]
+  assert_eq(@moonproxy.body_too_large(headers, 10), true)
+  // Repeated but identical values are fine.
+  assert_eq(
+    @moonproxy.body_too_large(
+      [("content-length", "4"), ("content-length", "4")],
+      10,
+    ),
+    false,
+  )
+}
+
+///|
+test "an unparseable content length is rejected when a limit is active" {
+  assert_eq(@moonproxy.body_too_large([("content-length", "abc")], 10), true)
+  assert_eq(@moonproxy.body_too_large([("content-length", "abc")], 0), false)
+}
+
+///|
 test "governance defaults to off" {
   let g = @moonproxy.Governance::off()
   assert_true(g.rate_limit() is None)

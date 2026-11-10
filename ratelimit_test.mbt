@@ -73,3 +73,18 @@ test "rule values below one are normalized" {
   assert_eq(rule.capacity(), 1)
   assert_eq(rule.refill_per_sec(), 1)
 }
+
+///|
+test "a multi-day idle gap still refills the bucket" {
+  let limiter = @moonproxy.RateLimiter::new(rule3())
+  for _ in 0..<3 {
+    ignore(limiter.allow("c", 0))
+  }
+  assert_eq(limiter.allow("c", 0), false)
+  // Ten days later the accrued-token product exceeds 32 bits; the bucket must
+  // still hand out its full capacity instead of staying stuck at zero.
+  let ten_days : Int64 = 864000000
+  assert_eq(limiter.tokens_for("c", ten_days), 3)
+  assert_eq(limiter.allow("c", ten_days), true)
+  assert_eq(limiter.tokens_for("c", ten_days), 2)
+}
