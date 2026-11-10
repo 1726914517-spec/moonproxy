@@ -138,9 +138,9 @@ moon build --target all
 moon test  --target all
 ```
 
-The portable core has 49 black-box tests that run on all four targets; the
-native runtime additionally has seven end-to-end tests that bring up real
-backends and a real proxy over localhost. They cover weighted balancing and
+The portable core has 52 black-box tests that run on all four targets; the
+native runtime adds ten tests, seven of which are end-to-end runs that bring up
+real backends and a real proxy over localhost. They cover weighted balancing and
 failover, active-probe recovery of a backend that comes back online, the
 retry/cookie/query semantics, and the governance path: a burst that earns
 `429` (then refills), an oversized body rejected with `413` before it reaches
