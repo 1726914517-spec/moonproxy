@@ -1,0 +1,11 @@
+pkgtype(kind: "executable")
+
+supported_targets = "native"
+
+import {
+  "1726914517-spec/moonproxy" @lib,
+  "1726914517-spec/moonproxy/runtime" @rt,
+  "moonbitlang/async",
+  "moonbitlang/async/http",
+  "moonbitlang/async/socket",
+}

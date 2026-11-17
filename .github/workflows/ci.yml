@@ -54,9 +54,9 @@ jobs:
             exit $code
           fi
 
-      - name: Demo smoke test over localhost
+      - name: Demo smoke test (routing, 429, 413, route ids)
         run: |
-          moon run cmd/main --target native &
+          moon run cmd/main --target native > /tmp/demo.log 2>&1 &
           PID=$!
           for i in $(seq 1 20); do
             curl -sf http://127.0.0.1:18080/ >/dev/null && break
@@ -64,4 +64,21 @@ jobs:
           done
           curl -sf http://127.0.0.1:18080/ | grep -q "hello from"
           curl -sf http://127.0.0.1:18080/api/users | grep -q "hello from"
+          # Let the bucket refill after the readiness probes.
+          sleep 2
+          burst=$(curl -s $(printf -- '-o /dev/null http://127.0.0.1:18080/ %.0s' {1..12}) -w '%{http_code} ')
+          echo "global burst: $burst"
+          echo "$burst" | grep -q "429"
+          oks=$(echo "$burst" | grep -o "200" | wc -l)
+          test "$oks" -ge 8
+          api=$(curl -s $(printf -- '-o /dev/null http://127.0.0.1:18080/api/users %.0s' {1..4}) -w '%{http_code} ')
+          echo "api burst: $api"
+          echo "$api" | grep -q "429"
+          test "$(echo "$api" | grep -o "200" | wc -l)" -ge 2
+          head -c 2048 /dev/zero > /tmp/big.file
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:18080/ --data-binary @/tmp/big.file)
+          echo "oversized body: $code"
+          test "$code" = "413"
+          grep -q '"route_id":"root"' /tmp/demo.log
+          echo "access log carries the matched route id"
           kill $PID
