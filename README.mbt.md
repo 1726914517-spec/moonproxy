@@ -1,5 +1,7 @@
 # moonproxy
 
+[![CI](https://github.com/1726914517-spec/moonproxy/actions/workflows/ci.yml/badge.svg)](https://github.com/1726914517-spec/moonproxy/actions/workflows/ci.yml)
+
 A native L7 **reverse proxy / load balancer runtime** for [MoonBit] — the
 category of nginx, HAProxy and Traefik. It terminates client HTTP/1.1
 connections, matches each request to a route, picks a backend through a pool's
@@ -75,32 +77,35 @@ process — no external setup:
 moon run cmd/main --target native
 ```
 
-Then, from another shell:
+Then, from another shell. Each line names the status code it should produce;
+the governance cases are asserted by CI on every push, so a green badge above
+means this path really works:
 
 ```bash
-# weighted round-robin across the three backends
-curl -s http://127.0.0.1:18080/
+# weighted round-robin across the three backends -> 200
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:18080/
 
-# routed to the api pool
-curl -s http://127.0.0.1:18080/api/users
+# routed to the api pool -> 200 (one member is a closed port; failover answers)
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:18080/api/users
 
-# a request body is forwarded
-curl -s -X POST http://127.0.0.1:18080/ -d 'hello'
+# a request body is forwarded -> 200
+curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:18080/ -d 'hello'
 
-# fire the burst from one curl process: 10 x 200, then 2 x 429. A shell loop
-# starts a new curl per request, and the gap between processes is long enough
-# for the bucket to refill, so the limit would look absent.
-curl -s -o /dev/null -w '%{http_code} ' $(printf 'http://127.0.0.1:18080/ %.0s' {1..12})
+# fire the burst from ONE curl process: 10 x 200, then 2 x 429. A shell loop
+# would start a new curl per request, and the gap between processes is long
+# enough for the bucket to refill, so the limit would look absent.
+curl -s $(printf -- '-o /dev/null http://127.0.0.1:18080/ %.0s' {1..12}) -w '%{http_code} '
 
-# the /api route owns a smaller burst (2), independent of the rule above
-curl -s -o /dev/null -w '%{http_code} ' $(printf 'http://127.0.0.1:18080/api/users %.0s' {1..4})
+# the /api route owns a smaller burst (2), independent of the rule above -> 200 200 429 429
+curl -s $(printf -- '-o /dev/null http://127.0.0.1:18080/api/users %.0s' {1..4}) -w '%{http_code} '
 
-# a body over the 1 KiB cap is rejected with 413 before reaching the backend
+# a body over the 1 KiB cap is rejected before reaching any backend -> 413
 python -c "open('big.file','wb').write(b'x'*2048)"
 curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:18080/ --data-binary @big.file
 ```
 
-Every request also prints one JSON access line on the demo's stdout.
+Every request also prints one JSON access line on the demo's stdout — including
+`"route_id"`, so a rejection or a 404 still tells you which route was matched.
 
 The `/api` pool deliberately includes a closed port; requests still succeed
 because the proxy fails over to the live backend. The demo also spawns an active
@@ -159,6 +164,31 @@ retry/cookie/query semantics, and the governance path: a burst that earns
 oversized body rejected with `413` before it reaches the backend, and the access
 records — including the route id that served each request — captured through the
 memory sink.
+
+## Load testing
+
+Two pieces ship with the repo so a reader can measure forwarding cost instead
+of taking a number on faith:
+
+- `cmd/bench` starts two echo backends and a proxy on ports 18081 / 19011 /
+  19012 with **no** governance rules, so the rate limiter does not shape the
+  sample. It writes to the memory log sink, so access logging does not dominate
+  the measurement either.
+- `bench/load.py` is a keep-alive load generator with no third-party
+  dependencies: one blocking connection per worker, no pipelining, no TLS.
+
+```bash
+moon run cmd/bench --target native          # fixture
+python bench/load.py --url http://127.0.0.1:19011/ --concurrency 8 --requests 3000
+python bench/load.py --url http://127.0.0.1:18081/ --concurrency 8 --requests 3000
+```
+
+The first run talks to a backend directly, the second goes through the proxy,
+so the difference between them is the forwarding cost on that machine. Both
+backends and the proxy run in one process and share one async event loop,
+everything is loopback and unencrypted — this is a cost probe, not a capacity
+claim. Laptop measurements swing with background load, so measure on the
+hardware you care about rather than quoting someone else's run.
 
 ## Engineering boundaries
 
