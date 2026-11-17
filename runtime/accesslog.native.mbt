@@ -11,6 +11,8 @@ pub struct AccessLogEntry {
   client_ip : String
   http_method : String
   path : String
+  /// The route that served the request, or `-` when nothing matched.
+  route_id : String
   status : Int32
   latency_ms : Int64
 }
@@ -24,8 +26,9 @@ pub fn AccessLogEntry::new(
   path~ : String,
   status~ : Int32,
   latency_ms~ : Int64,
+  route_id~ : String = "-",
 ) -> AccessLogEntry {
-  { timestamp_ms, client_ip, http_method, path, status, latency_ms, }
+  { timestamp_ms, client_ip, http_method, path, route_id, status, latency_ms, }
 }
 
 ///|
@@ -41,6 +44,12 @@ pub fn AccessLogEntry::http_method(self : AccessLogEntry) -> String {
 ///|
 pub fn AccessLogEntry::path(self : AccessLogEntry) -> String {
   self.path
+}
+
+///|
+/// The route id that served the request, or `-` when no route matched.
+pub fn AccessLogEntry::route_id(self : AccessLogEntry) -> String {
+  self.route_id
 }
 
 ///|
@@ -127,6 +136,8 @@ pub fn format_access_json(entry : AccessLogEntry) -> String {
   b.write_string(json_escape(entry.http_method))
   b.write_string("\",\"path\":\"")
   b.write_string(json_escape(entry.path))
+  b.write_string("\",\"route_id\":\"")
+  b.write_string(json_escape(entry.route_id))
   b.write_string("\",\"status\":")
   b.write_string(entry.status.to_string())
   b.write_string(",\"latency_ms\":")

@@ -234,6 +234,8 @@ pub struct Route {
   path : PathMatch
   pool : BackendPool
   options : RouteOptions
+  /// `None` means this route inherits the proxy-wide rule from `Governance`.
+  rate_limit : RateLimitRule?
 }
 
 ///|
@@ -244,8 +246,9 @@ pub fn Route::new(
   path : PathMatch,
   pool : BackendPool,
   options~ : RouteOptions = RouteOptions::defaults(),
+  rate_limit~ : RateLimitRule? = None,
 ) -> Route {
-  { id, host, path, pool, options, }
+  { id, host, path, pool, options, rate_limit, }
 }
 
 ///|
@@ -261,6 +264,12 @@ pub fn Route::exact(id : String, path : String, pool : BackendPool) -> Route {
 }
 
 ///|
+/// The route's stable identifier, used in access logs and per-route limits.
+pub fn Route::id(self : Route) -> String {
+  self.id
+}
+
+///|
 /// The pool this route forwards to.
 pub fn Route::pool(self : Route) -> BackendPool {
   self.pool
@@ -270,6 +279,28 @@ pub fn Route::pool(self : Route) -> BackendPool {
 /// This route's forwarding options.
 pub fn Route::options(self : Route) -> RouteOptions {
   self.options
+}
+
+///|
+/// This route's own rate-limit rule, or `None` when it inherits the proxy-wide
+/// one.
+pub fn Route::rate_limit(self : Route) -> RateLimitRule? {
+  self.rate_limit
+}
+
+///|
+/// Give this route its own token-bucket rule, overriding the proxy-wide policy
+/// for every client that lands on it. Returns a new route; the receiver is left
+/// unchanged so a builder chain can branch.
+pub fn Route::with_rate_limit(self : Route, rule : RateLimitRule) -> Route {
+  {
+    id: self.id,
+    host: self.host,
+    path: self.path,
+    pool: self.pool,
+    options: self.options,
+    rate_limit: Some(rule),
+  }
 }
 
 ///|

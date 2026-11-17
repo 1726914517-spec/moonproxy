@@ -8,6 +8,23 @@ fn pool() -> @moonproxy.BackendPool {
 }
 
 ///|
+test "a route can carry its own rate-limit rule" {
+  let route = @moonproxy.Route::prefix("api", "/api", pool())
+  assert_true(route.rate_limit() is None)
+  let rule = @moonproxy.RateLimitRule::new(capacity=2, refill_per_sec=1)
+  let limited = route.with_rate_limit(rule)
+  match limited.rate_limit() {
+    Some(r) => assert_eq(r.capacity(), 2)
+    None => fail("expected a rate rule")
+  }
+  // The original route is untouched, and the other route still inherits.
+  assert_true(route.rate_limit() is None)
+  assert_true(
+    @moonproxy.Route::prefix("root", "/", pool()).rate_limit() is None,
+  )
+}
+
+///|
 test "normalize host strips port and lowercases" {
   assert_eq(
     @moonproxy.normalize_host("API.Example.com:8080"),

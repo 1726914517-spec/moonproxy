@@ -16,7 +16,24 @@ fn sample(status : Int32) -> @runtime.AccessLogEntry {
 test "access log formats a json line" {
   assert_eq(
     @runtime.format_access_json(sample(200)),
-    "{\"timestamp_ms\":123456789,\"client_ip\":\"127.0.0.1\",\"http_method\":\"GET\",\"path\":\"/users?id=1\",\"status\":200,\"latency_ms\":3}",
+    "{\"timestamp_ms\":123456789,\"client_ip\":\"127.0.0.1\",\"http_method\":\"GET\",\"path\":\"/users?id=1\",\"route_id\":\"-\",\"status\":200,\"latency_ms\":3}",
+  )
+}
+
+///|
+test "the route that served the request is recorded" {
+  let entry = @runtime.AccessLogEntry::new(
+    timestamp_ms=1,
+    client_ip="127.0.0.1",
+    http_method="GET",
+    path="/api/users",
+    status=200,
+    latency_ms=0,
+    route_id="api",
+  )
+  assert_eq(entry.route_id(), "api")
+  assert_true(
+    @runtime.format_access_json(entry).contains("\"route_id\":\"api\""),
   )
 }
 

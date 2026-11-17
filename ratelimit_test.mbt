@@ -88,3 +88,39 @@ test "a multi-day idle gap still refills the bucket" {
   assert_eq(limiter.allow("c", ten_days), true)
   assert_eq(limiter.tokens_for("c", ten_days), 2)
 }
+
+///|
+test "prune drops full idle buckets" {
+  let limiter = @moonproxy.RateLimiter::new(rule3())
+  // One bucket fully drained, one left untouched (full).
+  for _ in 0..<3 {
+    ignore(limiter.allow("drained", 0))
+  }
+  ignore(limiter.allow("full", 0))
+  // Both are full again after ten minutes, and neither has been touched since.
+  assert_eq(limiter.prune(600000, 60000), 2)
+  // The state a recreated bucket hands out is the same as before the prune.
+  assert_eq(limiter.allow("full", 600000), true)
+  assert_eq(limiter.tokens_for("full", 600000), 2)
+}
+
+///|
+test "prune keeps a bucket that is still charged" {
+  let limiter = @moonproxy.RateLimiter::new(
+    @moonproxy.RateLimitRule::new(capacity=3, refill_per_sec=1),
+  )
+  for _ in 0..<3 {
+    ignore(limiter.allow("c", 0))
+  }
+  // One second later only one token is back: dropping it would hand the client
+  // a fresh burst of three, so it must survive.
+  assert_eq(limiter.prune(1000, 500), 0)
+  assert_eq(limiter.tokens_for("c", 1000), 1)
+}
+
+///|
+test "prune ignores a non-positive idle window" {
+  let limiter = @moonproxy.RateLimiter::new(rule3())
+  ignore(limiter.allow("c", 0))
+  assert_eq(limiter.prune(600000, 0), 0)
+}

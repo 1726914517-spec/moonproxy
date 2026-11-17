@@ -31,6 +31,9 @@ pub struct Runtime {
   balancers : Map[String, @moonproxy.Balancer]
   health : @moonproxy.HealthPolicy
   limiter : @moonproxy.RateLimiter?
+  /// One independent bucket set per route that declares its own rule, keyed by
+  /// route id, so a route's quota is not shared with the proxy-wide policy.
+  limiters : Map[String, @moonproxy.RateLimiter]
   sink : LogSink
 }
 
@@ -43,11 +46,12 @@ pub fn Runtime::new(
   sink~ : LogSink = LogSink::Stdout,
 ) -> Runtime {
   let balancers : Map[String, @moonproxy.Balancer] = Map([])
+  let limiters : Map[String, @moonproxy.RateLimiter] = Map([])
   let limiter = match config.governance().rate_limit() {
     Some(rule) => Some(@moonproxy.RateLimiter::new(rule))
     None => None
   }
-  { config, balancers, health, limiter, sink, }
+  { config, balancers, health, limiter, limiters, sink, }
 }
 
 ///|
@@ -68,26 +72,64 @@ fn Runtime::balancer_for(
 }
 
 ///|
+/// Get (and lazily create) the rate limiter owned by a route.
+fn Runtime::limiter_for_route(
+  self : Runtime,
+  route_id : String,
+  rule : @moonproxy.RateLimitRule,
+) -> @moonproxy.RateLimiter {
+  match self.limiters.get(route_id) {
+    Some(l) => l
+    None => {
+      let l = @moonproxy.RateLimiter::new(rule)
+      self.limiters.set(route_id, l)
+      l
+    }
+  }
+}
+
+///|
+/// Forget rate-limit state that no longer carries any information: a bucket that
+/// is full and has been idle for a minute behaves exactly like a bucket that was
+/// never seen, so dropping it only releases memory.
+async fn Runtime::run_maintenance(self : Runtime) -> Unit {
+  while true {
+    @async.sleep(30000)
+    let now = @async.now()
+    match self.limiter {
+      Some(l) => ignore(l.prune(now, 60000))
+      None => ()
+    }
+    for (_, l) in self.limiters {
+      ignore(l.prune(now, 60000))
+    }
+  }
+}
+
+///|
 /// Bind the listener and serve until cancelled.
 pub async fn Runtime::serve(self : Runtime) -> Unit {
   let addr = @socket.Addr::parse(self.config.bind())
   let server = @http.Server(addr, reuse_addr=true)
   let rt = self
-  server.run_forever(
-    (req, body, conn) => {
-      rt.process(req, body, conn) catch {
-        _ => {
-          conn.send_response(502, "Bad Gateway") catch {
-            _ => ()
-          }
-          conn.end_response() catch {
-            _ => ()
+  @async.with_task_group(g => {
+    g.spawn_bg(() => rt.run_maintenance())
+    server.run_forever(
+      (req, body, conn) => {
+        rt.process(req, body, conn) catch {
+          _ => {
+            conn.send_response(502, "Bad Gateway") catch {
+              _ => ()
+            }
+            conn.end_response() catch {
+              _ => ()
+            }
           }
         }
-      }
-    },
-    allow_failure=true,
-  )
+      },
+      allow_failure=true,
+    )
+  })
 }
 
 ///|
@@ -104,16 +146,56 @@ async fn Runtime::process(
   let client_ip = ip_of(conn.client_addr())
   let meth = method_to_string(req.meth)
   let incoming = headers_to_pairs(req.headers)
+  let original_host = match header_value(req.headers, "host") {
+    Some(h) => h
+    None => ""
+  }
+  // Route first: a route's own rule has to be known before a token is spent.
+  // The query string is not part of path matching, but the full target
+  // (`req.path`) is still forwarded to the backend.
+  let host = @moonproxy.normalize_host(original_host)
+  let route_path = @moonproxy.path_only(req.path)
+  let route = @moonproxy.select_route(self.config.routes(), host, route_path)
+  let route_id = match route {
+    Some(r) => r.id()
+    None => "-"
+  }
 
-  // Per-client rate limiting: answer 429 before touching any backend.
-  match self.limiter {
-    Some(limiter) => {
+  // Rate limiting: a route that declares its own rule gets a private bucket set
+  // keyed by route id, so its quota never leaks into another route. Routes that
+  // inherit, and requests that matched nothing, share the proxy-wide buckets
+  // keyed by client IP.
+  let limit_target = match route {
+    Some(r) =>
+      match r.rate_limit() {
+        Some(rule) =>
+          Some(
+            (self.limiter_for_route(route_id, rule), route_id + "|" + client_ip),
+          )
+        None =>
+          match self.limiter {
+            Some(l) => Some((l, client_ip))
+            None => None
+          }
+      }
+    None =>
+      match self.limiter {
+        Some(l) => Some((l, "__unmatched|" + client_ip))
+        None => None
+      }
+  }
+  match limit_target {
+    Some((limiter, key)) => {
       let now_ms = @async.now()
-      if !limiter.allow(client_ip, now_ms) {
+      if !limiter.allow(key, now_ms) {
         let headers = Map([(@http.CaseInsensitiveString("retry-after"), "1")])
-        conn.send_response(429, "Too Many Requests", extra_headers=headers)
-        conn.end_response()
-        self.log(client_ip, meth, req.path, 429, start)
+        conn.send_response(429, "Too Many Requests", extra_headers=headers) catch {
+          _ => ()
+        }
+        conn.end_response() catch {
+          _ => ()
+        }
+        self.log(client_ip, meth, req.path, route_id, 429, start)
         return
       }
     }
@@ -124,14 +206,20 @@ async fn Runtime::process(
   // forwarding (413).
   let max_body = self.config.governance().max_body_bytes()
   if @moonproxy.body_too_large(incoming, max_body) {
-    conn.send_response(413, "Payload Too Large")
-    conn.end_response()
-    self.log(client_ip, meth, req.path, 413, start)
+    conn.send_response(413, "Payload Too Large") catch {
+      _ => ()
+    }
+    conn.end_response() catch {
+      _ => ()
+    }
+    self.log(client_ip, meth, req.path, route_id, 413, start)
     return
   }
 
-  let status = self.handle(req, body, conn, incoming, client_ip)
-  self.log(client_ip, meth, req.path, status, start)
+  let status = self.handle(
+    route, req, body, conn, incoming, client_ip, original_host,
+  )
+  self.log(client_ip, meth, req.path, route_id, status, start)
 }
 
 ///|
@@ -141,6 +229,7 @@ fn Runtime::log(
   client_ip : String,
   meth : String,
   path : String,
+  route_id : String,
   status : Int32,
   start : Int64,
 ) -> Unit {
@@ -150,6 +239,7 @@ fn Runtime::log(
     client_ip~,
     http_method=meth,
     path~,
+    route_id~,
     status~,
     latency_ms=now - start,
   )
@@ -166,29 +256,27 @@ pub fn Runtime::access_entries(self : Runtime) -> Array[AccessLogEntry] {
 ///|
 async fn Runtime::handle(
   self : Runtime,
+  route : @moonproxy.Route?,
   req : @http.Request,
   body : &@io.Reader,
   conn : @http.ServerConnection,
   incoming : Array[(String, String)],
   client_ip : String,
+  original_host : String,
 ) -> Int32 {
-  let original_host = match header_value(req.headers, "host") {
-    Some(h) => h
-    None => ""
-  }
-  let host = @moonproxy.normalize_host(original_host)
-  // Route on the path alone; the query string is not part of path matching, but
-  // the full target (req.path) is still forwarded to the backend.
-  let route_path = @moonproxy.path_only(req.path)
-  match @moonproxy.select_route(self.config.routes(), host, route_path) {
+  match route {
     None => {
-      conn.send_response(404, "Not Found")
-      conn.end_response()
+      conn.send_response(404, "Not Found") catch {
+        _ => ()
+      }
+      conn.end_response() catch {
+        _ => ()
+      }
       404
     }
-    Some(route) =>
+    Some(r) =>
       self.proxy_to_route(
-        route, req, body, conn, incoming, client_ip, original_host,
+        r, req, body, conn, incoming, client_ip, original_host,
       )
   }
 }

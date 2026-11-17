@@ -137,6 +137,39 @@ pub fn RateLimiter::rejected_count(self : RateLimiter) -> Int32 {
 }
 
 ///|
+/// Drop buckets that have been idle for at least `idle_ms` and would already be
+/// full if refilled, and return how many were removed. A full, idle bucket is
+/// indistinguishable from a bucket that was never created, so removing it costs
+/// no correctness — it only bounds how much memory a flood of distinct client
+/// keys can pin. Partly drained buckets are kept, since dropping them would hand
+/// the client a fresh burst.
+pub fn RateLimiter::prune(
+  self : RateLimiter,
+  now_ms : Int64,
+  idle_ms : Int64,
+) -> Int32 {
+  if idle_ms <= 0 {
+    return 0
+  }
+  let stale : Array[String] = []
+  for (key, bucket) in self.buckets {
+    let elapsed = now_ms - bucket.last_ms
+    if elapsed >= idle_ms {
+      let potential = bucket.tokens.to_int64() +
+        elapsed * self.rule.refill_per_sec.to_int64() / 1000
+      if potential >= self.rule.capacity.to_int64() {
+        stale.push(key)
+      }
+    }
+  }
+  let removed = stale.length()
+  for key in stale {
+    self.buckets.remove(key)
+  }
+  removed
+}
+
+///|
 /// Current token balance for a key (0 for an unknown key) after refilling to
 /// `now_ms`; useful for diagnostics.
 pub fn RateLimiter::tokens_for(

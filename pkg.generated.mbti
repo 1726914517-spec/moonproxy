@@ -191,6 +191,7 @@ pub struct RateLimiter {
 pub fn RateLimiter::allow(Self, String, Int64) -> Bool
 pub fn RateLimiter::allowed_count(Self) -> Int32
 pub fn RateLimiter::new(RateLimitRule) -> Self
+pub fn RateLimiter::prune(Self, Int64, Int64) -> Int32
 pub fn RateLimiter::rejected_count(Self) -> Int32
 pub fn RateLimiter::tokens_for(Self, String, Int64) -> Int32
 
@@ -200,12 +201,16 @@ pub struct Route {
   path : PathMatch
   pool : BackendPool
   options : RouteOptions
+  rate_limit : RateLimitRule?
 }
 pub fn Route::exact(String, String, BackendPool) -> Self
-pub fn Route::new(String, HostMatch, PathMatch, BackendPool, options? : RouteOptions) -> Self
+pub fn Route::id(Self) -> String
+pub fn Route::new(String, HostMatch, PathMatch, BackendPool, options? : RouteOptions, rate_limit? : RateLimitRule?) -> Self
 pub fn Route::options(Self) -> RouteOptions
 pub fn Route::pool(Self) -> BackendPool
 pub fn Route::prefix(String, String, BackendPool) -> Self
+pub fn Route::rate_limit(Self) -> RateLimitRule?
+pub fn Route::with_rate_limit(Self, RateLimitRule) -> Self
 
 pub struct RouteOptions {
   preserve_host : Bool

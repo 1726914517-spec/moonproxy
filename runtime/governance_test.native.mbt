@@ -136,3 +136,75 @@ async test "runtime: rejects oversized bodies with 413 before forwarding" {
     tproxy.cancel()
   })
 }
+
+///|
+fn per_route_config(port : Int32) -> @moonproxy.ProxyConfig {
+  let a = @moonproxy.BackendPool::new("a").add(
+    @moonproxy.Backend::new("127.0.0.1", 18903),
+  )
+  let b = @moonproxy.BackendPool::new("b").add(
+    @moonproxy.Backend::new("127.0.0.1", 18904),
+  )
+  let rule = @moonproxy.RateLimitRule::new(capacity=1, refill_per_sec=1)
+  @moonproxy.ProxyConfig::new(host="127.0.0.1", port~)
+  .add_route(@moonproxy.Route::prefix("a", "/a", a).with_rate_limit(rule))
+  .add_route(@moonproxy.Route::prefix("b", "/b", b))
+}
+
+///|
+async test "runtime: a route rule limits only its own route" {
+  @async.with_task_group(g => {
+    let t1 = g.spawn(() => counting_backend(18903, []))
+    let t2 = g.spawn(() => counting_backend(18904, []))
+    let runtime = @runtime.Runtime::new(
+      per_route_config(18982),
+      sink=@runtime.LogSink::memory(),
+    )
+    let tproxy = g.spawn(() => runtime.serve())
+    @async.sleep(400)
+
+    // Route `a` owns a one-token burst: the second call is rejected.
+    let (a1, _) = @http.get("http://127.0.0.1:18982/a")
+    let (a2, _) = @http.get("http://127.0.0.1:18982/a")
+    assert_eq(a1.code, 200)
+    assert_eq(a2.code, 429)
+    // Route `b` has no rule of its own and no proxy-wide rule, so the same
+    // client is not penalised there.
+    let (b1, _) = @http.get("http://127.0.0.1:18982/b")
+    assert_eq(b1.code, 200)
+
+    // Every record names the route that served it.
+    let logged = runtime.access_entries()
+    assert_eq(logged.length(), 3)
+    assert_eq(logged[0].route_id(), "a")
+    assert_eq(logged[1].route_id(), "a")
+    assert_eq(logged[2].route_id(), "b")
+    assert_eq(logged[1].status(), 429)
+
+    t1.cancel()
+    t2.cancel()
+    tproxy.cancel()
+  })
+}
+
+///|
+async test "runtime: an unmatched path is logged with no route" {
+  @async.with_task_group(g => {
+    // No backend is started: a 404 must be decided at the edge, never forwarded.
+    let runtime = @runtime.Runtime::new(
+      per_route_config(18983),
+      sink=@runtime.LogSink::memory(),
+    )
+    let tproxy = g.spawn(() => runtime.serve())
+    @async.sleep(400)
+
+    let (r, _) = @http.get("http://127.0.0.1:18983/nope")
+    assert_eq(r.code, 404)
+    let logged = runtime.access_entries()
+    assert_eq(logged.length(), 1)
+    assert_eq(logged[0].status(), 404)
+    assert_eq(logged[0].route_id(), "-")
+
+    tproxy.cancel()
+  })
+}
