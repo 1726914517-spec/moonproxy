@@ -66,12 +66,14 @@ jobs:
           curl -sf http://127.0.0.1:18080/api/users | grep -q "hello from"
           # Let the bucket refill after the readiness probes.
           sleep 2
-          burst=$(curl -s $(printf -- '-o /dev/null http://127.0.0.1:18080/ %.0s' {1..12}) -w '%{http_code} ')
+          # 20 requests, not 12: a slow runner can refill a few tokens mid-burst,
+          # and the assertion is that the limit is crossed at some point.
+          burst=$(curl -s $(printf -- '-o /dev/null http://127.0.0.1:18080/ %.0s' {1..20}) -w '%{http_code} ')
           echo "global burst: $burst"
           echo "$burst" | grep -q "429"
           oks=$(echo "$burst" | grep -o "200" | wc -l)
-          test "$oks" -ge 8
-          api=$(curl -s $(printf -- '-o /dev/null http://127.0.0.1:18080/api/users %.0s' {1..4}) -w '%{http_code} ')
+          test "$oks" -ge 10
+          api=$(curl -s $(printf -- '-o /dev/null http://127.0.0.1:18080/api/users %.0s' {1..6}) -w '%{http_code} ')
           echo "api burst: $api"
           echo "$api" | grep -q "429"
           test "$(echo "$api" | grep -o "200" | wc -l)" -ge 2
@@ -87,7 +89,9 @@ jobs:
           # If `moon run` only spawned the binary, the listener is still up and
           # still holding buffered output; stop it and give it a moment to flush.
           if curl -s -o /dev/null --max-time 1 http://127.0.0.1:18080/; then
-            pkill -f "cmd/main" || true
+            # Match the built binary's path, not the whole `cmd/main` substring:
+            # a broad -f pattern could also match this step's own shell.
+            pkill -f "build/cmd/main/main" || true
             sleep 2
           fi
           grep -q '"route_id":"root"' /tmp/demo.log

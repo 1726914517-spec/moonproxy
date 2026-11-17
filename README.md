@@ -24,7 +24,9 @@ retry) lives in a portable core that compiles to `wasm`, `wasm-gc`, `js` and
   (FNV-1a for stable affinity).
 - **Connection-safe header forwarding** — strips hop-by-hop and per-connection
   headers, then adds `X-Forwarded-For`, `X-Forwarded-Proto`, `X-Forwarded-Host`
-  and `X-Real-IP`, and rewrites `Host` to the upstream.
+  and `X-Real-IP`, and rewrites `Host` to the upstream. Multi-value `Set-Cookie`
+  is forwarded intact: the HTTP parser keeps it out of the header map, so it
+  travels back on its own channel instead of being collapsed.
 - **Active and passive health tracking** — passive health trips a backend after
   consecutive real failures and restores it after a run of successes; an active
   probe loop additionally dials backends that are out of rotation every interval
@@ -42,7 +44,8 @@ retry) lives in a portable core that compiles to `wasm`, `wasm-gc`, `js` and
   `Retry-After` header before any backend is touched. A route can declare its
   own rule with `Route::with_rate_limit`; its buckets are keyed per route, so a
   strict quota on one route never eats into the quota of another, and routes
-  without a rule inherit the proxy-wide policy.
+  without a rule inherit the proxy-wide policy. Route ids must be unique — they
+  key those buckets and appear in every access record.
 - **Request body size limit** — an oversized declared `Content-Length` is
   rejected with `413 Payload Too Large` at the edge, so the bytes never travel
   upstream.

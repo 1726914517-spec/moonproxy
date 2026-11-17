@@ -4,6 +4,21 @@ All notable changes to this module are recorded here. Versions follow
 [Semantic Versioning](https://semver.org/); every version listed below is
 published on [mooncakes](https://mooncakes.io/docs/1726914517-spec/moonproxy).
 
+## 0.4.3 — 2026-11-17
+
+### Fixed
+
+- The 0.1.0 entry claimed `Set-Cookie` passthrough, but multiple cookies were
+  in fact dropped until 0.2.2; the entry now lists only what 0.1.0 did.
+- CI widened its burst to 20 requests (6 on `/api`), so a slow runner still
+  crosses the limit while tokens refill, and its fallback cleanup matches the
+  binary path instead of every command line containing `cmd/main`.
+
+### Changed
+
+- README states that multi-value `Set-Cookie` is forwarded intact, and that
+  route ids must be unique because they key the per-route limiter.
+
 ## 0.4.2 — 2026-11-17
 
 ### Added
@@ -21,7 +36,7 @@ published on [mooncakes](https://mooncakes.io/docs/1726914517-spec/moonproxy).
 
 - README opens with a CI badge and its quickstart names the status code each
   command should produce.
-- This changelog.
+- The repository carries this changelog from this release on.
 
 ## 0.4.1 — 2026-11-17
 
@@ -127,8 +142,8 @@ published on [mooncakes](https://mooncakes.io/docs/1726914517-spec/moonproxy).
   exact over prefix, longer prefix over shorter).
 - Five balancing policies: round-robin, smooth weighted round-robin, least
   connections, random with an injectable RNG, and client-IP hash.
-- Hop-by-hop header cleanup, `X-Forwarded-*` injection, upstream `Host`
-  rewrite and `Set-Cookie` passthrough.
+- Hop-by-hop header cleanup, `X-Forwarded-*` injection and upstream `Host`
+  rewrite.
 - Passive health tracking and method-aware failover/retry.
 - Native socket runtime with streaming request and response bodies.
 - Single-process demo (`cmd/main`) and CI covering all four targets plus a
