@@ -34,6 +34,9 @@ pub struct Runtime {
   /// One independent bucket set per route that declares its own rule, keyed by
   /// route id, so a route's quota is not shared with the proxy-wide policy.
   limiters : Map[String, @moonproxy.RateLimiter]
+  /// Timestamp of the last idle-bucket sweep, driven from the request path so
+  /// the runtime needs no background task.
+  mut last_sweep_ms : Int64
   sink : LogSink
 }
 
@@ -51,7 +54,7 @@ pub fn Runtime::new(
     Some(rule) => Some(@moonproxy.RateLimiter::new(rule))
     None => None
   }
-  { config, balancers, health, limiter, limiters, sink, }
+  { config, balancers, health, limiter, limiters, last_sweep_ms: 0, sink, }
 }
 
 ///|
@@ -89,20 +92,22 @@ fn Runtime::limiter_for_route(
 }
 
 ///|
-/// Forget rate-limit state that no longer carries any information: a bucket that
-/// is full and has been idle for a minute behaves exactly like a bucket that was
-/// never seen, so dropping it only releases memory.
-async fn Runtime::run_maintenance(self : Runtime) -> Unit {
-  while true {
-    @async.sleep(30000)
-    let now = @async.now()
-    match self.limiter {
-      Some(l) => ignore(l.prune(now, 60000))
-      None => ()
-    }
-    for (_, l) in self.limiters {
-      ignore(l.prune(now, 60000))
-    }
+/// Occasionally forget rate-limit state that no longer carries any information:
+/// a bucket that is full and has been idle for a minute behaves exactly like a
+/// bucket that was never created, so dropping it only releases memory. This is
+/// amortized onto the request path, which keeps the runtime free of a
+/// background task that would have to be torn down with the server.
+fn Runtime::maintain(self : Runtime, now_ms : Int64) -> Unit {
+  if now_ms - self.last_sweep_ms < 30000 {
+    return
+  }
+  self.last_sweep_ms = now_ms
+  match self.limiter {
+    Some(l) => ignore(l.prune(now_ms, 60000))
+    None => ()
+  }
+  for (_, l) in self.limiters {
+    ignore(l.prune(now_ms, 60000))
   }
 }
 
@@ -112,24 +117,21 @@ pub async fn Runtime::serve(self : Runtime) -> Unit {
   let addr = @socket.Addr::parse(self.config.bind())
   let server = @http.Server(addr, reuse_addr=true)
   let rt = self
-  @async.with_task_group(g => {
-    g.spawn_bg(() => rt.run_maintenance())
-    server.run_forever(
-      (req, body, conn) => {
-        rt.process(req, body, conn) catch {
-          _ => {
-            conn.send_response(502, "Bad Gateway") catch {
-              _ => ()
-            }
-            conn.end_response() catch {
-              _ => ()
-            }
+  server.run_forever(
+    (req, body, conn) => {
+      rt.process(req, body, conn) catch {
+        _ => {
+          conn.send_response(502, "Bad Gateway") catch {
+            _ => ()
+          }
+          conn.end_response() catch {
+            _ => ()
           }
         }
-      },
-      allow_failure=true,
-    )
-  })
+      }
+    },
+    allow_failure=true,
+  )
 }
 
 ///|
@@ -146,6 +148,9 @@ async fn Runtime::process(
   let client_ip = ip_of(conn.client_addr())
   let meth = method_to_string(req.meth)
   let incoming = headers_to_pairs(req.headers)
+  // Opportunistic housekeeping: at most once every 30 s, drop rate-limit state
+  // that carries no information any more.
+  self.maintain(start)
   let original_host = match header_value(req.headers, "host") {
     Some(h) => h
     None => ""
