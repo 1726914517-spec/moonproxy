@@ -79,6 +79,16 @@ jobs:
           code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:18080/ --data-binary @/tmp/big.file)
           echo "oversized body: $code"
           test "$code" = "413"
+          # Stop the demo before inspecting its log: stdout redirected to a file
+          # is block-buffered, so the records are only guaranteed to be on disk
+          # once the process exits and flushes them.
+          kill $PID 2>/dev/null || true
+          sleep 2
+          # If `moon run` only spawned the binary, the listener is still up and
+          # still holding buffered output; stop it and give it a moment to flush.
+          if curl -s -o /dev/null --max-time 1 http://127.0.0.1:18080/; then
+            pkill -f "cmd/main" || true
+            sleep 2
+          fi
           grep -q '"route_id":"root"' /tmp/demo.log
           echo "access log carries the matched route id"
-          kill $PID
