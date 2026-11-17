@@ -11,7 +11,7 @@
 
 name = "1726914517-spec/moonproxy"
 
-version = "0.4.0"
+version = "0.4.1"
 
 readme = "README.mbt.md"
 
@@ -31,7 +31,7 @@ keywords = [
 
 preferred_target = "wasm"
 
-description = "A native L7 reverse proxy / load balancer runtime with edge governance: host/path routing, five balancing policies, header policy, health checks and failover, plus per-client rate limiting, body size limits and structured access logs."
+description = "A native L7 reverse proxy / load balancer runtime with edge governance: host/path routing, five balancing policies, header policy, health checks and failover, plus per-client and per-route rate limiting, body size limits and structured access logs."
 
 import {
   "moonbitlang/async@0.22.4",

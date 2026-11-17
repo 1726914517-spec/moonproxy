@@ -87,11 +87,13 @@ curl -s http://127.0.0.1:18080/api/users
 # a request body is forwarded
 curl -s -X POST http://127.0.0.1:18080/ -d 'hello'
 
-# push past the proxy-wide burst (10) to see the edge answer 429
-for i in $(seq 1 12); do curl -s -o /dev/null -w '%{http_code} ' http://127.0.0.1:18080/; done
+# fire the burst from one curl process: 10 x 200, then 2 x 429. A shell loop
+# starts a new curl per request, and the gap between processes is long enough
+# for the bucket to refill, so the limit would look absent.
+curl -s -o /dev/null -w '%{http_code} ' $(printf 'http://127.0.0.1:18080/ %.0s' {1..12})
 
-# the /api route has its own smaller burst (2), independent of the rule above
-for i in $(seq 1 4); do curl -s -o /dev/null -w '%{http_code} ' http://127.0.0.1:18080/api/users; done
+# the /api route owns a smaller burst (2), independent of the rule above
+curl -s -o /dev/null -w '%{http_code} ' $(printf 'http://127.0.0.1:18080/api/users %.0s' {1..4})
 
 # a body over the 1 KiB cap is rejected with 413 before reaching the backend
 python -c "open('big.file','wb').write(b'x'*2048)"
@@ -109,7 +111,7 @@ re-added to rotation.
 
 There is no config file parser yet — a proxy is built with the core API:
 
-```moonbit nocheck
+```moonbit
 let web = BackendPool::new("web", policy=WeightedRR)
   .add(Backend::new("10.0.0.1", 8080, weight=2))
   .add(Backend::new("10.0.0.2", 8080, weight=1))
@@ -131,7 +133,7 @@ runtime.serve()
 With the memory sink, the records are available in-process instead of being
 printed:
 
-```moonbit nocheck
+```moonbit
 let runtime = @runtime.Runtime::new(config, sink=LogSink::memory())
 // ... after requests ...
 for entry in runtime.access_entries() {
