@@ -35,15 +35,18 @@ retry) lives in a portable core that compiles to `wasm`, `wasm-gc`, `js` and
   methods; a failure after the request body started is never replayed.
 - **Streaming** — request and response bodies are piped through readers, so
   responses are not buffered wholesale.
-- **Per-client rate limiting** — a token bucket per client IP (burst capacity
-  plus a steady refill) rejects excess requests with `429 Too Many Requests`
-  and a `Retry-After` header before any backend is touched.
+- **Per-client rate limiting, per route when needed** — a token bucket keyed by
+  client IP rejects excess requests with `429 Too Many Requests` and a
+  `Retry-After` header before any backend is touched. A route can declare its
+  own rule with `Route::with_rate_limit`; its buckets are keyed per route, so a
+  strict quota on one route never eats into the quota of another, and routes
+  without a rule inherit the proxy-wide policy.
 - **Request body size limit** — an oversized declared `Content-Length` is
   rejected with `413 Payload Too Large` at the edge, so the bytes never travel
   upstream.
 - **Structured access logs** — one JSON record per request (timestamp, client,
-  method, path, status, latency) goes to an injectable sink: JSON lines on
-  stdout by default, or an in-memory sink for tests and embedding.
+  method, path, matched route id, status, latency) goes to an injectable sink:
+  JSON lines on stdout by default, or an in-memory sink for tests and embedding.
 
 ## Ecosystem position
 
@@ -84,8 +87,11 @@ curl -s http://127.0.0.1:18080/api/users
 # a request body is forwarded
 curl -s -X POST http://127.0.0.1:18080/ -d 'hello'
 
-# push past the burst capacity (5) to see the edge answer 429
-for i in $(seq 1 8); do curl -s -o /dev/null -w '%{http_code} ' http://127.0.0.1:18080/; done
+# push past the proxy-wide burst (10) to see the edge answer 429
+for i in $(seq 1 12); do curl -s -o /dev/null -w '%{http_code} ' http://127.0.0.1:18080/; done
+
+# the /api route has its own smaller burst (2), independent of the rule above
+for i in $(seq 1 4); do curl -s -o /dev/null -w '%{http_code} ' http://127.0.0.1:18080/api/users; done
 
 # a body over the 1 KiB cap is rejected with 413 before reaching the backend
 python -c "open('big.file','wb').write(b'x'*2048)"
@@ -110,7 +116,11 @@ let web = BackendPool::new("web", policy=WeightedRR)
 // Edge governance: a burst of 20 requests refilling at 10/s, bodies capped at 1 MiB.
 let rule = RateLimitRule::new(capacity=20, refill_per_sec=10)
 let governance = Governance::new(rate_limit=Some(rule), max_body_bytes=1048576)
+// A route may override the proxy-wide rule; its buckets stay its own.
+let api = BackendPool::new("api").add(Backend::new("10.0.0.3", 8080))
+let api_rule = RateLimitRule::new(capacity=5, refill_per_sec=2)
 let config = ProxyConfig::new(host="0.0.0.0", port=80, governance)
+  .add_route(Route::prefix("api", "/api", api).with_rate_limit(api_rule))
   .add_route(Route::prefix("root", "/", web))
 // Default sink writes JSON lines; pass LogSink::memory() to capture records.
 let runtime = @runtime.Runtime::new(config)
@@ -138,13 +148,15 @@ moon build --target all
 moon test  --target all
 ```
 
-The portable core has 52 black-box tests that run on all four targets; the
-native runtime adds ten tests, seven of which are end-to-end runs that bring up
+The portable core has 56 black-box tests that run on all four targets; the
+native runtime adds 13 tests, nine of which are end-to-end runs that bring up
 real backends and a real proxy over localhost. They cover weighted balancing and
 failover, active-probe recovery of a backend that comes back online, the
 retry/cookie/query semantics, and the governance path: a burst that earns
-`429` (then refills), an oversized body rejected with `413` before it reaches
-the backend, and the access records captured through the memory sink.
+`429` (then refills), a route whose quota is isolated from its neighbours, an
+oversized body rejected with `413` before it reaches the backend, and the access
+records — including the route id that served each request — captured through the
+memory sink.
 
 ## Engineering boundaries
 
@@ -157,12 +169,13 @@ Being explicit about what this release does not do:
 - The edge speaks HTTP/1.1; HTTP/2 and TLS termination are not in this
   release. The async HTTP layer exposes no server-side TLS in its public API,
   so HTTPS termination cannot be built without reimplementing HTTP framing.
-- Rate limiting is global and keyed by client IP across all routes; per-route
-  rules are not configurable yet.
-- Rate-limit buckets are kept per client IP and are never evicted, so a very
-  large number of distinct source addresses grows the map without bound. A
-  production edge would add an LRU or an idle-expiry sweep; this release does
-  not.
+- Rate-limit state is per client IP and per route id. A sweep runs at most once
+  every 30 s, piggybacked on the request path, and drops buckets that are full
+  and have been idle for a minute — a full idle bucket behaves exactly like one
+  that never existed, so this costs no correctness. Partly drained buckets are
+  deliberately kept (dropping them would hand the client a fresh burst), so a
+  flood of distinct source addresses that each spend one token can still grow
+  the table. There is no hard cap or LRU bound yet.
 - The body size guard acts on the declared `Content-Length`. A chunked request
   without a length cannot be sized up front and is not preemptively rejected.
 - The decision core is portable, but the socket runtime (including the probe
